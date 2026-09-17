@@ -32,7 +32,7 @@ table across long windows. `kuma-sla` reuses the data Kuma already keeps — the
 
 - **Uptime Kuma 2.x** with a **SQLite** database (the `stat_daily` table must exist).
 - Read access to the `kuma.db` file (run this next to Kuma, or mount the volume read-only).
-- Go 1.24+ to build (single static binary, no CGO).
+- **Docker** to run the published image — or Go 1.24+ to build from source.
 
 ## Quick start (Docker)
 
@@ -97,26 +97,57 @@ host/URL (URL host, or `hostname:port`) instead of its Kuma name; the default is
 
 See [`examples/domains/example.com.yaml`](examples/domains/example.com.yaml).
 
-## Deploy
+## Install (Docker, recommended)
 
-Recommended: run it as a container next to Uptime Kuma.
-
-1. On the host, create `/opt/kuma-sla/` with a `docker-compose.yml` (see
-   [`contrib/docker-compose.yml`](contrib/docker-compose.yml)) and a `domains/`
-   directory holding your `<hostname>.yaml` configs.
-2. `docker compose up -d`.
-3. Point a TLS reverse proxy (nginx/Caddy/Traefik) at `127.0.0.1:3002` for each
-   domain, and aim each domain's DNS at the host.
-
-Updating: CI builds and pushes the image on every push to `main`, so a deploy is
-just pulling the new image:
+Run it as a container next to Uptime Kuma.
 
 ```sh
-make deploy HOST=my-kuma-host   # ssh + docker compose pull && up -d
+# 1. lay out the host directory
+sudo mkdir -p /opt/kuma-sla/domains
+
+# 2. add one config per status domain (see examples/domains/)
+sudo tee /opt/kuma-sla/domains/sla.example.com.yaml >/dev/null <<'YAML'
+title: SLA · example.com
+subtitle: our public services
+label_by: host
+groups:
+  - name: Websites
+    include:
+      - "glob:*.example.com"
+YAML
+
+# 3. compose file
+sudo tee /opt/kuma-sla/docker-compose.yml >/dev/null <<'YAML'
+services:
+  kuma-sla:
+    image: registry.gutocarvalho.net/open/kuma-sla:latest
+    container_name: kuma-sla
+    restart: always
+    ports:
+      - "127.0.0.1:3002:3002"
+    volumes:
+      - /opt/uptimekuma/data:/data:ro   # Kuma's data dir (kuma.db + -wal/-shm)
+      - /opt/kuma-sla/domains:/config:ro
+YAML
+
+# 4. start it
+cd /opt/kuma-sla && sudo docker compose up -d
 ```
 
-Config changes need no redeploy — edit the files under `domains/` (mounted into
-the container) and they're hot-reloaded within ~60s.
+Then point a TLS reverse proxy (nginx/Caddy/Traefik) at `127.0.0.1:3002` for each
+domain and aim each domain's DNS at the host.
+
+**Updating** — CI builds and pushes the image on every push to `main`, so a
+deploy is just pulling the new image:
+
+```sh
+cd /opt/kuma-sla && docker compose pull && docker compose up -d
+# or, from a workstation with SSH access:
+make deploy HOST=my-kuma-host
+```
+
+**Config changes** need no redeploy — edit the files under `domains/` (mounted
+into the container) and they're hot-reloaded within ~60s.
 
 > Not using Docker? A hardened systemd unit is provided in
 > [`contrib/kuma-sla.service`](contrib/kuma-sla.service) as an alternative.
