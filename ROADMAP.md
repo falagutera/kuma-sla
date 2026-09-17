@@ -23,6 +23,7 @@ Rough, unordered list of things we'd like to add. PRs welcome.
 - [ ] Group-level rollups (a single SLA number per group).
 
 ## Ops
-- [ ] Container image + example docker-compose (sidecar to Uptime Kuma).
+- [x] Container image + example docker-compose (sidecar to Uptime Kuma).
+- [ ] Multi-arch image (arm64 in addition to amd64).
 - [ ] Prometheus `/metrics` export of the computed SLAs.
 - [ ] GitHub Actions workflow mirroring the GitLab CI.

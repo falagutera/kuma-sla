@@ -1,0 +1,23 @@
+# kuma-sla as a sidecar to Uptime Kuma.
+#
+# Mounts Kuma's data directory read-only (kuma-sla never writes) and your
+# per-domain configs, then serves the dashboard on 127.0.0.1:3002 — put a TLS
+# reverse proxy (nginx/Caddy/Traefik) in front of it.
+
+services:
+  kuma-sla:
+    image: registry.gutocarvalho.net/open/kuma-sla:latest
+    # To build from source instead of pulling the published image:
+    # build: .
+    container_name: kuma-sla
+    restart: always
+    ports:
+      - "127.0.0.1:3002:3002"
+    volumes:
+      # Uptime Kuma's data dir, read-only. The whole dir is mounted (not just
+      # kuma.db) so SQLite can read the -wal/-shm files too.
+      - /opt/uptimekuma/data:/data:ro
+      # Your per-domain configs (<hostname>.yaml). Hot-reloaded (~60s).
+      - ./domains:/config:ro
+    # KUMA_DB=/data/kuma.db, CONFIG_DIR=/config and LISTEN=0.0.0.0:3002 are the
+    # image defaults; override here only if your layout differs.

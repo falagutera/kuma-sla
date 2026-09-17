@@ -1,0 +1,14 @@
+.git
+.gitignore
+.gitlab-ci.yml
+README.md
+ROADMAP.md
+LICENSE
+Makefile
+contrib/
+examples/
+domains/
+kuma-sla
+kuma-sla-linux-amd64
+dist/
+*.out

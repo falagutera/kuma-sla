@@ -1,35 +1,32 @@
 # kuma-sla — build & deploy
 BINARY  := kuma-sla-linux-amd64
 LDFLAGS := -s -w
+IMAGE   := registry.gutocarvalho.net/open/kuma-sla:latest
 
-# Deploy target (override on the command line):
-#   make deploy HOST=myhost
-HOST        ?= kuma-claude
-REMOTE_BIN  ?= /opt/kuma-sla/kuma-sla
-REMOTE_CFG  ?= /opt/kuma-sla/domains
+# Deploy target (override on the command line): make deploy HOST=myhost
+HOST      ?= kuma-claude
+REMOTE_DIR ?= /opt/kuma-sla
 
-.PHONY: build vet test run deploy clean
+.PHONY: build vet test run image deploy clean
 
 build: ## build a static linux/amd64 binary
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="$(LDFLAGS)" -o $(BINARY) .
 
-vet: ## go vet
+vet: ## go vet + gofmt check
 	go vet ./...
+	gofmt -l .
 
 test: ## go test
 	go test ./...
 
-run: ## run locally against a DB (KUMA_DB=... CONFIG_DIR=...)
+run: ## run locally (KUMA_DB=... CONFIG_DIR=...)
 	go run .
 
-deploy: build ## build, copy binary + local domain configs to HOST, restart service
-	scp $(BINARY) $(HOST):/tmp/kuma-sla
-	ssh $(HOST) 'sudo install -m0755 /tmp/kuma-sla $(REMOTE_BIN) && sudo install -d $(REMOTE_CFG)'
-	@if ls domains/*.yaml >/dev/null 2>&1; then \
-	  scp domains/*.yaml $(HOST):/tmp/ && \
-	  ssh $(HOST) 'sudo install -m0644 /tmp/*.yaml $(REMOTE_CFG)/'; \
-	fi
-	ssh $(HOST) 'sudo systemctl restart kuma-sla && systemctl is-active kuma-sla'
+image: ## build the container image locally
+	docker build -t $(IMAGE) .
+
+deploy: ## pull the latest image and (re)start the container on HOST via compose
+	ssh $(HOST) 'cd $(REMOTE_DIR) && docker compose pull && docker compose up -d && docker compose ps'
 
 clean:
 	rm -f $(BINARY)
