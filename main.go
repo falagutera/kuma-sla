@@ -21,6 +21,7 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	neturl "net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -47,10 +48,11 @@ var windows = []struct {
 
 // Service is the computed SLA of a monitor.
 type Service struct {
-	ID    int
-	Name  string
-	Today *float64            // nil = no data
-	SLA   map[string]*float64 // window key -> % (nil = no data)
+	ID     int
+	Name   string
+	Target string              // host from url, or hostname[:port] (for label_by: host)
+	Today  *float64            // nil = no data
+	SLA    map[string]*float64 // window key -> % (nil = no data)
 }
 
 type snapshot struct {
@@ -66,7 +68,8 @@ type snapshot struct {
 type domainConfig struct {
 	Title    string  `yaml:"title"`
 	Subtitle string  `yaml:"subtitle"`
-	Include  []incl  `yaml:"include"` // implicit single group (no heading)
+	LabelBy  string  `yaml:"label_by"` // "name" (default) or "host" (url host / hostname[:port])
+	Include  []incl  `yaml:"include"`  // implicit single group (no heading)
 	Groups   []group `yaml:"groups"`
 	Footer   []link  `yaml:"footer"` // footer items; empty = default footer
 }
@@ -242,7 +245,7 @@ func buildView(host string, snap snapshot, cfg *domainConfig) view {
 		v.Subtitle = "all monitors (no config for this domain)"
 		rows := make([]viewRow, 0, len(snap.Services))
 		for i := range snap.Services {
-			rows = append(rows, rowFrom(&snap.Services[i], ""))
+			rows = append(rows, rowFrom(&snap.Services[i], "", ""))
 		}
 		v.Groups = []viewGroup{{Rows: rows}}
 		v.Count = len(rows)
@@ -272,7 +275,7 @@ func buildView(host string, snap snapshot, cfg *domainConfig) view {
 					continue
 				}
 				seen[svc.ID] = true
-				vg.Rows = append(vg.Rows, rowFrom(svc, label))
+				vg.Rows = append(vg.Rows, rowFrom(svc, label, cfg.LabelBy))
 			}
 		}
 		if len(vg.Rows) > 0 || g.Name != "" {
@@ -283,9 +286,16 @@ func buildView(host string, snap snapshot, cfg *domainConfig) view {
 	return v
 }
 
-func rowFrom(s *Service, label string) viewRow {
+// rowFrom builds a table row. An explicit YAML label always wins; otherwise the
+// label is the monitor's host (when labelBy == "host" and a target exists) or its name.
+func rowFrom(s *Service, explicit, labelBy string) viewRow {
+	label := explicit
 	if label == "" {
-		label = s.Name
+		if labelBy == "host" && s.Target != "" {
+			label = s.Target
+		} else {
+			label = s.Name
+		}
 	}
 	return viewRow{Label: label, Today: s.Today, SLA: s.SLA}
 }
@@ -373,7 +383,7 @@ func (s *server) loadConfigs() map[string]*domainConfig {
 func (s *server) compute(ctx context.Context) (snapshot, error) {
 	now := time.Now().UTC()
 
-	rows, err := s.db.QueryContext(ctx, `SELECT id, name FROM monitor WHERE active=1 ORDER BY name COLLATE NOCASE`)
+	rows, err := s.db.QueryContext(ctx, `SELECT id, name, url, hostname, port FROM monitor WHERE active=1 ORDER BY name COLLATE NOCASE`)
 	if err != nil {
 		return snapshot{}, fmt.Errorf("monitors: %w", err)
 	}
@@ -381,11 +391,18 @@ func (s *server) compute(ctx context.Context) (snapshot, error) {
 	for rows.Next() {
 		var id int
 		var name string
-		if err := rows.Scan(&id, &name); err != nil {
+		var url, hostname sql.NullString
+		var port sql.NullInt64
+		if err := rows.Scan(&id, &name, &url, &hostname, &port); err != nil {
 			rows.Close()
 			return snapshot{}, err
 		}
-		snap.Services = append(snap.Services, Service{ID: id, Name: name, SLA: map[string]*float64{}})
+		snap.Services = append(snap.Services, Service{
+			ID:     id,
+			Name:   name,
+			Target: deriveTarget(url.String, hostname.String, port.Int64),
+			SLA:    map[string]*float64{},
+		})
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
@@ -465,6 +482,24 @@ func (s *server) compute(ctx context.Context) (snapshot, error) {
 	})
 	snap.Generated = time.Now()
 	return snap, nil
+}
+
+// deriveTarget builds the "host" label for a monitor: the hostname[:port] for
+// port/ping monitors, or the host parsed from the URL for HTTP monitors. Returns
+// "" when neither is available (the caller then falls back to the monitor name).
+func deriveTarget(rawURL, hostname string, port int64) string {
+	if hostname != "" {
+		if port != 0 {
+			return hostname + ":" + strconv.FormatInt(port, 10)
+		}
+		return hostname
+	}
+	if rawURL != "" {
+		if u, err := neturl.Parse(rawURL); err == nil && u.Host != "" {
+			return u.Host
+		}
+	}
+	return ""
 }
 
 // pct returns the uptime % or nil when there are no samples in the window.

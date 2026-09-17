@@ -73,6 +73,10 @@ groups:
       - { name: "api.example.com", label: "Public API" }   # map form; label renames a single match
 ```
 
+Set `label_by: host` at the top of a file to label rows by each monitor's
+host/URL (URL host, or `hostname:port`) instead of its Kuma name; the default is
+`name`. A per-entry `label` always overrides it.
+
 See [`examples/domains/example.com.yaml`](examples/domains/example.com.yaml).
 
 ## Deploy

@@ -17,6 +17,12 @@
 title: SLA · example.com
 subtitle: our public services
 
+# How to label each row:
+#   name (default) — the monitor's name in Uptime Kuma
+#   host           — the monitor's host/URL (URL host, or hostname[:port])
+# A per-entry `label` (map form below) always overrides this.
+label_by: host
+
 groups:
   - name: Websites
     include:
