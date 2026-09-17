@@ -1,16 +1,17 @@
-// kuma-sla — dashboard de SLA por serviço a partir do banco do Uptime Kuma.
+// kuma-sla — a per-service SLA dashboard built from Uptime Kuma's database.
 //
-// Lê o kuma.db (SQLite) em modo read-only e calcula uptime por janela
-// (today / 7d / 30d / 90d / 6m / 1y) para cada monitor ativo:
-//   - janelas longas: tabela agregada stat_daily (up/down por dia)
-//   - "today": tabela heartbeat (mais fresco, intradiário)
+// It reads kuma.db (SQLite) read-only and computes uptime per window
+// (today / 7d / 30d / 90d / 6m / 1y) for each active monitor:
+//   - long windows: the aggregated stat_daily table (up/down per day)
+//   - "today": the heartbeat table (freshest, intraday)
 //
-// O QUE cada hostname mostra é definido por um YAML por domínio (CONFIG_DIR):
-// um arquivo <hostname>.yaml com grupos e seleção de monitores (nome exato,
-// id:N ou glob:padrão). O request é roteado pelo Host. Sem config casando,
-// cai num fallback que lista todos os monitores ativos.
+// WHAT each hostname shows is defined by one YAML per domain (CONFIG_DIR):
+// a file <hostname>.yaml with groups and monitor selectors (exact name,
+// id:N or glob:pattern). Requests are routed by Host. When no config
+// matches, it falls back to listing every active monitor.
 //
-// Binário estático: única dependência externa é o driver SQLite puro-Go.
+// Static binary: the only external dependencies are the pure-Go SQLite
+// driver and a YAML parser.
 package main
 
 import (
@@ -32,7 +33,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-// Janelas exibidas, na ordem da tabela. "today" é tratado à parte (heartbeat).
+// Windows shown, in table order. "today" is handled separately (heartbeat).
 var windows = []struct {
 	Key  string
 	Days int
@@ -44,29 +45,43 @@ var windows = []struct {
 	{"1y", 365},
 }
 
-// Service é o SLA calculado de um monitor.
+// Service is the computed SLA of a monitor.
 type Service struct {
 	ID    int
 	Name  string
-	Today *float64            // nil = sem dados
-	SLA   map[string]*float64 // key da janela -> % (nil = sem dados)
+	Today *float64            // nil = no data
+	SLA   map[string]*float64 // window key -> % (nil = no data)
 }
 
 type snapshot struct {
 	Generated time.Time
-	Services  []Service // ordenado por nome
+	Services  []Service // sorted by name
 	byID      map[int]*Service
-	byName    map[string]*Service // chave = nome em minúsculas
+	byName    map[string]*Service // key = lowercased name
 	Err       string
 }
 
-// ---- config por domínio (YAML) ----
+// ---- per-domain config (YAML) ----
 
 type domainConfig struct {
 	Title    string  `yaml:"title"`
 	Subtitle string  `yaml:"subtitle"`
-	Include  []incl  `yaml:"include"` // grupo único implícito (sem cabeçalho)
+	Include  []incl  `yaml:"include"` // implicit single group (no heading)
 	Groups   []group `yaml:"groups"`
+	Footer   []link  `yaml:"footer"` // footer items; empty = default footer
+}
+
+// link is a footer item: a text and an optional URL.
+type link struct {
+	Text string `yaml:"text"`
+	URL  string `yaml:"url"`
+}
+
+// defaultFooter is used when a domain defines no `footer:` (keeps the template
+// neutral for anyone using the project outside its original deployment).
+var defaultFooter = []link{
+	{Text: "powered by kuma-sla", URL: "https://gitlab.gutocarvalho.net/open/kuma-sla"},
+	{Text: "MIT"},
 }
 
 type group struct {
@@ -74,8 +89,9 @@ type group struct {
 	Include []incl `yaml:"include"`
 }
 
-// incl é uma entrada de seleção: nome exato, "id:N", "glob:padrão" ou o mapa
-// {select|name|id|glob, label}. Normaliza tudo em Select ("glob:..."/"id:..."/nome).
+// incl is a selector entry: an exact name, "id:N", "glob:pattern", or the map
+// {select|name|id|glob, label}. Everything normalizes to Select
+// ("glob:..."/"id:..."/name).
 type incl struct {
 	Select string
 	Label  string
@@ -117,7 +133,7 @@ type server struct {
 
 	mu      sync.RWMutex
 	snap    snapshot
-	configs map[string]*domainConfig // chave = hostname em minúsculas
+	configs map[string]*domainConfig // key = lowercased hostname
 }
 
 func main() {
@@ -137,7 +153,7 @@ func main() {
 	}
 
 	s := &server{db: db, cfgDir: cfgDir, tmpl: template.Must(template.New("page").Funcs(tmplFuncs).Parse(pageHTML))}
-	s.reload() // primeira carga síncrona (dados + configs)
+	s.reload() // first synchronous load (data + configs)
 
 	go func() {
 		t := time.NewTicker(refresh)
@@ -157,7 +173,7 @@ func main() {
 	})
 	mux.HandleFunc("/", s.handleIndex)
 
-	log.Printf("kuma-sla ouvindo em %s (db=%s, config=%s)", listen, dbPath, cfgDir)
+	log.Printf("kuma-sla listening on %s (db=%s, config=%s)", listen, dbPath, cfgDir)
 	srv := &http.Server{Addr: listen, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 	log.Fatal(srv.ListenAndServe())
 }
@@ -177,9 +193,21 @@ type view struct {
 	Title     string
 	Subtitle  string
 	Host      string
+	BrandHead string // first label of the host (e.g. "sla")
+	BrandTLD  string // the rest of the host (e.g. "bolha.io")
+	Count     int    // total services shown
 	Generated time.Time
 	Groups    []viewGroup
+	Footer    []link
 	Err       string
+}
+
+// brandParts splits the host at the first dot: "sla.bolha.io" -> ("sla","bolha.io").
+func brandParts(host string) (string, string) {
+	if i := strings.IndexByte(host, '.'); i >= 0 {
+		return host[:i], host[i+1:]
+	}
+	return host, ""
 }
 
 func (s *server) handleIndex(w http.ResponseWriter, r *http.Request) {
@@ -204,22 +232,27 @@ func (s *server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// buildView resolve a config do domínio contra o snapshot. Sem config -> lista
-// todos os monitores ativos (fallback).
+// buildView resolves the domain config against the snapshot. With no config it
+// lists every active monitor (fallback).
 func buildView(host string, snap snapshot, cfg *domainConfig) view {
-	v := view{Host: host, Generated: snap.Generated, Err: snap.Err}
+	v := view{Host: host, Generated: snap.Generated, Err: snap.Err, Footer: defaultFooter}
+	v.BrandHead, v.BrandTLD = brandParts(host)
 	if cfg == nil {
 		v.Title = "SLA · " + host
-		v.Subtitle = "todos os monitores (sem config para este domínio)"
+		v.Subtitle = "all monitors (no config for this domain)"
 		rows := make([]viewRow, 0, len(snap.Services))
 		for i := range snap.Services {
 			rows = append(rows, rowFrom(&snap.Services[i], ""))
 		}
 		v.Groups = []viewGroup{{Rows: rows}}
+		v.Count = len(rows)
 		return v
 	}
 	v.Title = orDefault(cfg.Title, "SLA · "+host)
 	v.Subtitle = cfg.Subtitle
+	if len(cfg.Footer) > 0 {
+		v.Footer = cfg.Footer
+	}
 
 	groups := cfg.Groups
 	if len(groups) == 0 && len(cfg.Include) > 0 {
@@ -232,7 +265,7 @@ func buildView(host string, snap snapshot, cfg *domainConfig) view {
 			matches := snap.resolve(in.Select)
 			label := ""
 			if len(matches) == 1 {
-				label = in.Label // label só faz sentido em match único
+				label = in.Label // a label only makes sense for a single match
 			}
 			for _, svc := range matches {
 				if seen[svc.ID] {
@@ -244,6 +277,7 @@ func buildView(host string, snap snapshot, cfg *domainConfig) view {
 		}
 		if len(vg.Rows) > 0 || g.Name != "" {
 			v.Groups = append(v.Groups, vg)
+			v.Count += len(vg.Rows)
 		}
 	}
 	return v
@@ -256,7 +290,7 @@ func rowFrom(s *Service, label string) viewRow {
 	return viewRow{Label: label, Today: s.Today, SLA: s.SLA}
 }
 
-// resolve devolve os serviços que casam com um seletor (nome exato / id:N / glob:padrão).
+// resolve returns the services matching a selector (exact name / id:N / glob:pattern).
 func (snap snapshot) resolve(sel string) []*Service {
 	sel = strings.TrimSpace(sel)
 	switch {
@@ -275,7 +309,7 @@ func (snap snapshot) resolve(sel string) []*Service {
 				out = append(out, &snap.Services[i])
 			}
 		}
-		return out // Services já vem ordenado por nome
+		return out // Services is already sorted by name
 	default:
 		if s := snap.byName[strings.ToLower(sel)]; s != nil {
 			return []*Service{s}
@@ -284,7 +318,7 @@ func (snap snapshot) resolve(sel string) []*Service {
 	}
 }
 
-// ---- carga (dados + configs) ----
+// ---- load (data + configs) ----
 
 func (s *server) reload() {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
@@ -313,7 +347,7 @@ func (s *server) loadConfigs() map[string]*domainConfig {
 	out := map[string]*domainConfig{}
 	entries, err := os.ReadDir(s.cfgDir)
 	if err != nil {
-		return out // sem dir de config -> fallback pra todos
+		return out // no config dir -> fall back to listing everything
 	}
 	for _, e := range entries {
 		name := e.Name()
@@ -327,7 +361,7 @@ func (s *server) loadConfigs() map[string]*domainConfig {
 		}
 		var c domainConfig
 		if err := yaml.Unmarshal(b, &c); err != nil {
-			log.Printf("config %s: yaml invalido: %v", name, err)
+			log.Printf("config %s: invalid yaml: %v", name, err)
 			continue
 		}
 		host := strings.ToLower(strings.TrimSuffix(strings.TrimSuffix(name, ".yml"), ".yaml"))
@@ -341,7 +375,7 @@ func (s *server) compute(ctx context.Context) (snapshot, error) {
 
 	rows, err := s.db.QueryContext(ctx, `SELECT id, name FROM monitor WHERE active=1 ORDER BY name COLLATE NOCASE`)
 	if err != nil {
-		return snapshot{}, fmt.Errorf("monitores: %w", err)
+		return snapshot{}, fmt.Errorf("monitors: %w", err)
 	}
 	snap := snapshot{byID: map[int]*Service{}, byName: map[string]*Service{}}
 	for rows.Next() {
@@ -363,7 +397,7 @@ func (s *server) compute(ctx context.Context) (snapshot, error) {
 		snap.byName[strings.ToLower(sv.Name)] = sv
 	}
 
-	// janelas longas via stat_daily (agregação condicional numa passada só)
+	// long windows from stat_daily (conditional aggregation in a single pass)
 	var sb strings.Builder
 	for _, w := range windows {
 		th := now.AddDate(0, 0, -w.Days).Unix()
@@ -400,7 +434,7 @@ func (s *server) compute(ctx context.Context) (snapshot, error) {
 		return snapshot{}, err
 	}
 
-	// "today" via heartbeat (UTC). status: 1=up,0=down,2=pending,3=maint
+	// "today" from heartbeat (UTC). status: 1=up, 0=down, 2=pending, 3=maintenance
 	startToday := now.Format("2006-01-02") + " 00:00:00"
 	hrows, err := s.db.QueryContext(ctx, `
 		SELECT monitor_id,
@@ -433,6 +467,7 @@ func (s *server) compute(ctx context.Context) (snapshot, error) {
 	return snap, nil
 }
 
+// pct returns the uptime % or nil when there are no samples in the window.
 func pct(up, down int64) *float64 {
 	total := up + down
 	if total == 0 {
@@ -474,14 +509,15 @@ var tmplFuncs = template.FuncMap{
 		if v == nil {
 			return template.HTML(`<td class="sla none">—</td>`)
 		}
-		cls := "green"
+		cls := "ok"
 		switch {
 		case *v < 95:
-			cls = "red"
+			cls = "bad"
 		case *v < 99:
-			cls = "amber"
-		case *v < 99.9:
-			cls = "teal"
+			cls = "warn"
+		}
+		if *v >= 99.9 {
+			cls += " hi"
 		}
 		return template.HTML(fmt.Sprintf(`<td class="sla %s">%.3f%%</td>`, cls, *v))
 	},
@@ -489,53 +525,122 @@ var tmplFuncs = template.FuncMap{
 }
 
 const pageHTML = `<!doctype html>
-<html lang="pt-br"><head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<html lang="en">
+<meta charset="utf-8">
 <title>{{.Title}}</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="{{.Title}} — uptime per service (today/7d/30d/90d/6m/1y), via Uptime Kuma.">
+<meta name="color-scheme" content="dark light">
 <style>
-:root{--bg:#f7f7f8;--fg:#1c1c1e;--muted:#6b7280;--card:#fff;--line:#e5e7eb;
- --green:#16a34a;--teal:#0891b2;--amber:#d97706;--red:#dc2626;}
-@media (prefers-color-scheme:dark){:root{--bg:#0f1113;--fg:#e6e7e9;--muted:#9aa0a6;--card:#17191c;--line:#2a2d31;}}
-*{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;padding:24px 16px}
-.wrap{max-width:920px;margin:0 auto}
-h1{font-size:20px;margin:0 0 2px}
-.sub{color:var(--muted);font-size:13px;margin-bottom:18px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow-x:auto;margin-bottom:18px}
-.gname{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);padding:12px 12px 0}
-table{border-collapse:collapse;width:100%;min-width:640px}
-th,td{padding:9px 12px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
-th{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:600}
-th.svc,td.svc{text-align:left;width:40%}
-tr:last-child td{border-bottom:none}
-td.svc{font-weight:500}
-.sla{font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
-.green{color:var(--green)} .teal{color:var(--teal)} .amber{color:var(--amber)} .red{color:var(--red);font-weight:600}
-.none{color:var(--muted)}
-.legend{display:flex;gap:14px;flex-wrap:wrap;color:var(--muted);font-size:12px;margin:4px 2px 0}
-.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;vertical-align:middle}
-.err{background:#dc26261a;border:1px solid var(--red);color:var(--red);padding:10px 12px;border-radius:10px;margin-bottom:14px}
-.empty{color:var(--muted);padding:12px}
-</style></head><body><div class="wrap">
-<h1>{{.Title}}</h1>
-<div class="sub">{{if .Subtitle}}{{.Subtitle}} · {{end}}fonte: Uptime Kuma · atualizado {{fmtTime .Generated}}</div>
-{{if .Err}}<div class="err">erro ao ler dados: {{.Err}}</div>{{end}}
-{{range .Groups}}
-<div class="card">
-{{if .Name}}<div class="gname">{{.Name}}</div>{{end}}
-{{if .Rows}}<table>
-<thead><tr><th class="svc">Serviço</th>{{range windows}}<th>{{.}}</th>{{end}}</tr></thead>
-<tbody>
-{{range .Rows}}<tr><td class="svc">{{.Label}}</td>{{$row := .}}{{range windows}}{{cell $row .}}{{end}}</tr>
-{{end}}
-</tbody></table>{{else}}<div class="empty">nenhum monitor casou com a seleção deste grupo</div>{{end}}
-</div>
-{{end}}
-<div class="legend">
-<span><span class="dot" style="background:var(--green)"></span>≥ 99,9%</span>
-<span><span class="dot" style="background:var(--teal)"></span>99–99,9%</span>
-<span><span class="dot" style="background:var(--amber)"></span>95–99%</span>
-<span><span class="dot" style="background:var(--red)"></span>&lt; 95%</span>
-<span>— sem dados na janela</span>
-</div>
-</div></body></html>`
+  :root{
+    --mono:ui-monospace,"SF Mono","Cascadia Code","JetBrains Mono",Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    /* dark-navy world, mint signal accent */
+    --ground:#0c111b;--panel:#111826;--panel-2:#0f1522;--surface:#141c2b;
+    --ink:#e6ecf5;--muted:#93a1b5;--faint:#66748a;--line:#20293a;--line-2:#1a2230;
+    --accent:#2fd8a6;--accent-ink:#5fe6bd;--accent-dim:#173a33;
+    --ok:#2fd8a6;--warn:#e3a13a;--bad:#ef5f5f;
+    --shadow:0 1px 2px rgba(0,0,0,.35),0 12px 34px rgba(0,0,0,.4);
+  }
+  :root[data-theme="light"]{
+    --ground:#eef2f7;--panel:#fff;--panel-2:#f5f8fb;--surface:#fff;
+    --ink:#132033;--muted:#4f6076;--faint:#8091a5;--line:#dde5ef;--line-2:#e9eef5;
+    --accent:#0f9d78;--accent-ink:#0c7e60;--accent-dim:#d6f2e8;
+    --ok:#0f9d78;--warn:#b9791a;--bad:#d33c3c;
+    --shadow:0 1px 2px rgba(20,30,45,.05),0 10px 26px rgba(20,30,45,.07);
+  }
+  @media (prefers-color-scheme:light){:root:not([data-theme]){
+    --ground:#eef2f7;--panel:#fff;--panel-2:#f5f8fb;--surface:#fff;
+    --ink:#132033;--muted:#4f6076;--faint:#8091a5;--line:#dde5ef;--line-2:#e9eef5;
+    --accent:#0f9d78;--accent-ink:#0c7e60;--accent-dim:#d6f2e8;
+    --ok:#0f9d78;--warn:#b9791a;--bad:#d33c3c;
+    --shadow:0 1px 2px rgba(20,30,45,.05),0 10px 26px rgba(20,30,45,.07);
+  }}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--sans);line-height:1.6;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1080px;margin:0 auto;padding:clamp(20px,4vw,40px) clamp(16px,4vw,32px) 64px}
+  a{color:inherit}
+
+  .conn{display:flex;flex-wrap:wrap;align-items:center;gap:10px 26px;padding:12px 16px;
+    background:var(--panel-2);border:1px solid var(--line);border-radius:12px;font-family:var(--mono);font-size:12.5px;margin-bottom:clamp(26px,5vw,44px)}
+  .conn .k{color:var(--faint);letter-spacing:.12em;text-transform:uppercase;font-size:11px;margin-right:8px}
+  .conn .v{color:var(--ink);font-variant-numeric:tabular-nums}
+  .conn .live{margin-left:auto;display:inline-flex;align-items:center;gap:8px;color:var(--faint)}
+  .conn .live .dot{width:7px;height:7px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 22%,transparent)}
+
+  header{margin-bottom:clamp(22px,4vw,36px)}
+  .brand{font-family:var(--mono);font-weight:700;font-size:clamp(26px,5vw,40px);letter-spacing:-.02em;margin:0}
+  .brand .dot{color:var(--accent)}
+  .brand .tld{color:var(--faint);font-weight:600}
+  .lede{margin:12px 0 0;max-width:62ch;color:var(--muted);font-size:clamp(15px,2vw,16.5px)}
+
+  .cat{margin-top:clamp(24px,4vw,38px)}
+  .cat-head{display:flex;align-items:center;gap:12px;margin:0 0 14px}
+  .cat-head h2{font-family:var(--mono);font-size:12px;letter-spacing:.2em;text-transform:uppercase;color:var(--muted);margin:0;font-weight:600}
+  .cat-head .rule{height:1px;background:var(--line);flex:1}
+
+  .panel{background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);overflow-x:auto}
+  table{border-collapse:collapse;width:100%;min-width:640px}
+  thead th{font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);font-weight:600;text-align:right;padding:13px 16px;border-bottom:1px solid var(--line);white-space:nowrap}
+  thead th.svc{text-align:left}
+  tbody td{padding:11px 16px;text-align:right;border-bottom:1px solid var(--line-2);white-space:nowrap}
+  tbody tr:last-child td{border-bottom:none}
+  tbody tr:hover td{background:var(--panel-2)}
+  td.svc{text-align:left;font-family:var(--mono);font-size:13.5px;color:var(--ink)}
+  .sla{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:13px;color:var(--muted)}
+  .sla.ok{color:var(--ok)} .sla.warn{color:var(--warn)} .sla.bad{color:var(--bad)}
+  .sla.hi{font-weight:700}
+  .sla.none{color:var(--faint)}
+  .empty{color:var(--faint);font-family:var(--mono);font-size:13px;padding:16px}
+
+  .legend{display:flex;gap:16px;flex-wrap:wrap;color:var(--faint);font-family:var(--mono);font-size:12px;margin:16px 2px 0}
+  .legend .sw{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:middle}
+  .err{background:color-mix(in srgb,var(--bad) 12%,transparent);border:1px solid var(--bad);color:var(--bad);padding:10px 14px;border-radius:12px;margin-bottom:16px;font-family:var(--mono);font-size:13px}
+
+  footer{margin-top:48px;padding-top:20px;border-top:1px solid var(--line);display:flex;flex-wrap:wrap;gap:6px 18px;font-family:var(--mono);font-size:12.5px;color:var(--faint)}
+  footer a{color:var(--muted);text-decoration:none;border-bottom:1px dotted var(--line)}
+  footer a:hover{color:var(--accent-ink)}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap">
+  <div class="conn" aria-label="summary">
+    <span><span class="k">SLA</span><span class="v">{{.Count}} services</span></span>
+    <span><span class="k">source</span><span class="v">Uptime Kuma</span></span>
+    <span><span class="k">updated</span><span class="v">{{fmtTime .Generated}}</span></span>
+    <span class="live"><span class="dot"></span>live</span>
+  </div>
+
+  <header>
+    <h1 class="brand">{{.BrandHead}}{{if .BrandTLD}}<span class="dot">.</span><span class="tld">{{.BrandTLD}}</span>{{end}}</h1>
+    {{if .Subtitle}}<p class="lede">{{.Subtitle}}</p>{{end}}
+  </header>
+
+  {{if .Err}}<div class="err">error reading data: {{.Err}}</div>{{end}}
+
+  {{range .Groups}}
+  <section class="cat">
+    {{if .Name}}<div class="cat-head"><h2>{{.Name}}</h2><span class="rule"></span></div>{{end}}
+    <div class="panel">
+    {{if .Rows}}<table>
+      <thead><tr><th class="svc">Service</th>{{range windows}}<th>{{.}}</th>{{end}}</tr></thead>
+      <tbody>
+      {{range .Rows}}<tr><td class="svc">{{.Label}}</td>{{$row := .}}{{range windows}}{{cell $row .}}{{end}}</tr>
+      {{end}}
+      </tbody>
+    </table>{{else}}<div class="empty">no monitors matched this group's selection</div>{{end}}
+    </div>
+  </section>
+  {{end}}
+
+  <div class="legend">
+    <span><span class="sw" style="background:var(--ok)"></span>≥ 99%</span>
+    <span><span class="sw" style="background:var(--warn)"></span>95–99%</span>
+    <span><span class="sw" style="background:var(--bad)"></span>&lt; 95%</span>
+    <span>— no data</span>
+  </div>
+
+  <footer>
+    {{range .Footer}}{{if .URL}}<a href="{{.URL}}">{{.Text}}</a>{{else}}<span>{{.Text}}</span>{{end}}{{end}}
+  </footer>
+</div>`

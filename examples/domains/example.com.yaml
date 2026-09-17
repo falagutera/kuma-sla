@@ -29,3 +29,10 @@ groups:
       - { name: "api.example.com", label: "Public API" }
 
 # A flat list (no groups) is also valid — put `include:` at the top level instead.
+
+# Optional custom footer. Each item is text with an optional url. When omitted,
+# a small default footer ("powered by kuma-sla") is shown instead.
+footer:
+  - { text: "Made by Example Org" }
+  - { text: "example.com", url: "https://example.com" }
+  - { text: "MIT" }
