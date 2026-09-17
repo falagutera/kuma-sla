@@ -1,0 +1,31 @@
+# Example domain config for kuma-sla.
+#
+# Name each file after the hostname it serves: <hostname>.yaml
+# (e.g. sla.example.com.yaml). kuma-sla routes each request to the config
+# matching its Host header. Drop as many files as you have domains — there is
+# no limit. A request whose Host matches no file falls back to listing every
+# active monitor.
+#
+# Each `include` entry selects Uptime Kuma monitors and accepts:
+#   - "Exact monitor name"      exact match on the monitor's name (case-insensitive)
+#   - "id:42"                   match by monitor id
+#   - "glob:*.example.com"      glob on the name (case-insensitive; * ? [..])
+#   - { glob: "*.tools", label: "Tools" }   map form; `label` renames a single match
+#
+# Files are hot-reloaded (~60s), so edits take effect without a restart.
+
+title: SLA · example.com
+subtitle: our public services
+
+groups:
+  - name: Websites
+    include:
+      - "www.example.com"
+      - "id:12"
+      - "glob:*.example.com"
+
+  - name: APIs
+    include:
+      - { name: "api.example.com", label: "Public API" }
+
+# A flat list (no groups) is also valid — put `include:` at the top level instead.

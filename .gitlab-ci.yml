@@ -1,0 +1,22 @@
+stages: [test, build]
+
+default:
+  image: golang:1.27
+
+variables:
+  GOFLAGS: -trimpath
+  CGO_ENABLED: "0"
+
+vet:
+  stage: test
+  script:
+    - go vet ./...
+    - gofmt -l . | tee /dev/stderr | (! read)   # fail if anything is unformatted
+
+build:
+  stage: build
+  script:
+    - GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o kuma-sla-linux-amd64 .
+  artifacts:
+    paths: [kuma-sla-linux-amd64]
+    expire_in: 30 days

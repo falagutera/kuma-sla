@@ -1,0 +1,29 @@
+[Unit]
+Description=kuma-sla — per-service SLA dashboard (reads Uptime Kuma's DB read-only)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/opt/kuma-sla/kuma-sla
+# Path to the Uptime Kuma SQLite database (read-only). For a Docker install of
+# Kuma this is the host path of the volume mounted at /app/data.
+Environment=KUMA_DB=/opt/uptimekuma/data/kuma.db
+# Address to listen on. Keep it on loopback and put a TLS reverse proxy in front.
+Environment=LISTEN=127.0.0.1:3002
+# Directory of per-domain YAML configs (<hostname>.yaml).
+Environment=CONFIG_DIR=/opt/kuma-sla/domains
+Restart=on-failure
+RestartSec=3
+
+# Hardening — the service only needs to read the DB and its config dir.
+DynamicUser=yes
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+RestrictAddressFamilies=AF_INET AF_INET6
+MemoryMax=128M
+
+[Install]
+WantedBy=multi-user.target
