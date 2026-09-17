@@ -23,7 +23,7 @@ build:
 
 # Build the container image and push it to the project's Container Registry.
 # Uses kaniko (no Docker daemon needed) and the job token for auth.
-image:
+build-image:
   stage: image
   image:
     name: gcr.io/kaniko-project/executor:v1.23.2-debug
