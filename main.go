@@ -558,7 +558,7 @@ const pageHTML = `<!doctype html>
   }}
   *{box-sizing:border-box}
   body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--sans);line-height:1.6;-webkit-font-smoothing:antialiased}
-  .wrap{max-width:1080px;margin:0 auto;padding:clamp(20px,4vw,40px) clamp(16px,4vw,32px) 64px}
+  .wrap{max-width:1200px;margin:0 auto;padding:clamp(20px,4vw,40px) clamp(16px,4vw,32px) 64px}
   a{color:inherit}
 
   .conn{display:flex;flex-wrap:wrap;align-items:center;gap:10px 26px;padding:12px 16px;
