@@ -14,6 +14,10 @@ Rough, unordered list of things we'd like to add. PRs welcome.
 - [ ] Optional **own daily rollup store** so history can exceed Kuma's retention
       (keep SLA beyond the ~1y `stat_daily` window, independent of Kuma pruning).
 - [ ] Duration-weighted uptime option (vs. current count-weighted `up/(up+down)`).
+- [ ] **Coverage / gap awareness.** Time when Kuma itself was down produces no
+      beats, so it silently drops out of `up/(up+down)` instead of showing as a gap.
+      Derive expected beats per window from each monitor's interval, show coverage %
+      next to the SLA, and optionally count unobserved time as unknown or down.
 - [ ] Explicit handling / display of maintenance windows.
 - [ ] Configurable SLA color thresholds and window set.
 
