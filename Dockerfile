@@ -4,8 +4,9 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
+ARG VERSION=dev
 # static binary; timetzdata embeds the tz database so TZ works on scratch
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -tags timetzdata -o /kuma-sla .
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -tags timetzdata -o /kuma-sla .
 
 # --- runtime stage ---------------------------------------------------------
 FROM scratch

@@ -46,6 +46,9 @@ var windows = []struct {
 	{"1y", 365},
 }
 
+// version is set at build time: -ldflags "-X main.version=v0.3.0".
+var version = "dev"
+
 // coverageSlackDays is how many days short of a window a monitor's history may
 // be and still have that window reported.
 const coverageSlackDays = 2
@@ -580,21 +583,22 @@ var tmplFuncs = template.FuncMap{
 		if v == nil {
 			return template.HTML(`<td class="sla none">—</td>`)
 		}
+		// 100% green, 99–<100 purple, 95–<99 amber, <95 red
 		cls := "ok"
 		switch {
 		case *v < 95:
 			cls = "bad"
 		case *v < 99:
 			cls = "warn"
+		case *v < 100:
+			cls = "high"
 		}
 		if *v >= 99.9 {
 			cls += " hi"
 		}
-		if *v >= 100 {
-			cls = "perfect hi"
-		}
 		return template.HTML(fmt.Sprintf(`<td class="sla %s">%.3f%%</td>`, cls, *v))
 	},
+	"version": func() string { return version },
 	"fmtTime": func(t time.Time) string { return t.Local().Format("2006-01-02 15:04:05 MST") },
 }
 
@@ -613,21 +617,21 @@ const pageHTML = `<!doctype html>
     --ground:#0c111b;--panel:#111826;--panel-2:#0f1522;--surface:#141c2b;
     --ink:#e6ecf5;--muted:#93a1b5;--faint:#66748a;--line:#20293a;--line-2:#1a2230;
     --accent:#2fd8a6;--accent-ink:#5fe6bd;--accent-dim:#173a33;
-    --ok:#2fd8a6;--warn:#e3a13a;--bad:#ef5f5f;--perfect:#b794ff;
+    --ok:#2fd8a6;--warn:#e3a13a;--bad:#ef5f5f;--high:#b794ff;
     --shadow:0 1px 2px rgba(0,0,0,.35),0 12px 34px rgba(0,0,0,.4);
   }
   :root[data-theme="light"]{
     --ground:#eef2f7;--panel:#fff;--panel-2:#f5f8fb;--surface:#fff;
     --ink:#132033;--muted:#4f6076;--faint:#8091a5;--line:#dde5ef;--line-2:#e9eef5;
     --accent:#0f9d78;--accent-ink:#0c7e60;--accent-dim:#d6f2e8;
-    --ok:#0f9d78;--warn:#b9791a;--bad:#d33c3c;--perfect:#7c4dff;
+    --ok:#0f9d78;--warn:#b9791a;--bad:#d33c3c;--high:#7c4dff;
     --shadow:0 1px 2px rgba(20,30,45,.05),0 10px 26px rgba(20,30,45,.07);
   }
   @media (prefers-color-scheme:light){:root:not([data-theme]){
     --ground:#eef2f7;--panel:#fff;--panel-2:#f5f8fb;--surface:#fff;
     --ink:#132033;--muted:#4f6076;--faint:#8091a5;--line:#dde5ef;--line-2:#e9eef5;
     --accent:#0f9d78;--accent-ink:#0c7e60;--accent-dim:#d6f2e8;
-    --ok:#0f9d78;--warn:#b9791a;--bad:#d33c3c;--perfect:#7c4dff;
+    --ok:#0f9d78;--warn:#b9791a;--bad:#d33c3c;--high:#7c4dff;
     --shadow:0 1px 2px rgba(20,30,45,.05),0 10px 26px rgba(20,30,45,.07);
   }}
   *{box-sizing:border-box}
@@ -664,9 +668,9 @@ const pageHTML = `<!doctype html>
   .sla{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:13px;color:var(--muted)}
   .sla.ok{color:var(--ok)} .sla.warn{color:var(--warn)} .sla.bad{color:var(--bad)}
   .sla.hi{font-weight:700}
-  .sla.perfect{color:var(--perfect)}
-  tr.perfect td.svc{color:var(--perfect);box-shadow:inset 3px 0 0 var(--perfect)}
-  tr.perfect td.svc::after{content:"★";display:inline-block;margin-left:10px;font-size:18px;line-height:1;vertical-align:-2px;text-shadow:0 0 10px color-mix(in srgb,var(--perfect) 60%,transparent)}
+  .sla.high{color:var(--high)}
+  tr.perfect td.svc{color:var(--ok);box-shadow:inset 3px 0 0 var(--ok)}
+  tr.perfect td.svc::after{content:"★";display:inline-block;margin-left:10px;font-size:18px;line-height:1;vertical-align:-2px;text-shadow:0 0 10px color-mix(in srgb,var(--ok) 60%,transparent)}
   .sla.none{color:var(--faint)}
   .empty{color:var(--faint);font-family:var(--mono);font-size:13px;padding:16px}
 
@@ -684,6 +688,7 @@ const pageHTML = `<!doctype html>
   <div class="conn" aria-label="summary">
     <span><span class="k">SLA</span><span class="v">{{.Count}} services</span></span>
     <span><span class="k">source</span><span class="v">Uptime Kuma</span></span>
+    <span><span class="k">version</span><span class="v">{{version}}</span></span>
     <span><span class="k">updated</span><span class="v">{{fmtTime .Generated}}</span></span>
     <span class="live"><span class="dot"></span>live</span>
   </div>
@@ -711,8 +716,8 @@ const pageHTML = `<!doctype html>
   {{end}}
 
   <div class="legend">
-    <span><span class="sw" style="background:var(--perfect)"></span>100% ★ every window, ≥ 30 days of history</span>
-    <span><span class="sw" style="background:var(--ok)"></span>≥ 99%</span>
+    <span><span class="sw" style="background:var(--ok)"></span>100% (★ every window, ≥ 30 days of history)</span>
+    <span><span class="sw" style="background:var(--high)"></span>99–100%</span>
     <span><span class="sw" style="background:var(--warn)"></span>95–99%</span>
     <span><span class="sw" style="background:var(--bad)"></span>&lt; 95%</span>
     <span>— no data (monitor younger than the window)</span>
@@ -720,5 +725,6 @@ const pageHTML = `<!doctype html>
 
   <footer>
     {{range .Footer}}{{if .URL}}<a href="{{.URL}}">{{.Text}}</a>{{else}}<span>{{.Text}}</span>{{end}}{{end}}
+    <a href="https://gitlab.gutocarvalho.net/open/kuma-sla/-/releases">kuma-sla {{version}}</a>
   </footer>
 </div>`

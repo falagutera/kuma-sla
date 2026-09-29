@@ -3,6 +3,17 @@
 All notable changes to kuma-sla. Versions follow [SemVer](https://semver.org/);
 container images are published as `registry.gutocarvalho.net/open/kuma-sla:<version>`.
 
+## v0.3.0 — 2026-09-28
+
+### Added
+- **Version on the page**: shown in the top summary bar and as a footer link
+  to the releases page. Set at build time (`-X main.version=...`); the image
+  build passes the git tag (or short commit) as `VERSION`.
+
+### Changed
+- **New colour bands**: 100% is green (the accent colour), 99–<100% is
+  purple, 95–<99% amber, <95% red. Perfect rows (★) use green.
+
 ## v0.2.1 — 2026-09-28
 
 ### Changed
