@@ -3,6 +3,14 @@
 All notable changes to kuma-sla. Versions follow [SemVer](https://semver.org/);
 container images are published as `registry.gutocarvalho.net/open/kuma-sla:<version>`.
 
+## v0.2.1 — 2026-09-28
+
+### Changed
+- The ★ on perfect rows is larger and glows, so it no longer reads as a dot.
+- A row is "perfect" when it is 100% in today and in every window that has
+  data, with at least 30 days of history (v0.2.0 demanded a full year, which
+  no real service met).
+
 ## v0.2.0 — 2026-09-28
 
 ### Added

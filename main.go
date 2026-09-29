@@ -194,14 +194,14 @@ type viewRow struct {
 }
 
 // Perfect reports whether the row is exactly 100% (no down beats at all) in
-// today and in every long window. A missing window (monitor younger than it)
-// disqualifies the row, so a brand-new monitor never earns the highlight.
+// today and in every window that has data, with at least 30 days of history
+// (so a brand-new monitor never earns the highlight).
 func (r viewRow) Perfect() bool {
-	if len(r.SLA) < len(windows) {
+	if r.SLA["7d"] == nil || r.SLA["30d"] == nil {
 		return false
 	}
 	for _, v := range append([]*float64{r.Today}, slaValues(r.SLA)...) {
-		if v == nil || *v < 100 {
+		if v != nil && *v < 100 {
 			return false
 		}
 	}
@@ -666,7 +666,7 @@ const pageHTML = `<!doctype html>
   .sla.hi{font-weight:700}
   .sla.perfect{color:var(--perfect)}
   tr.perfect td.svc{color:var(--perfect);box-shadow:inset 3px 0 0 var(--perfect)}
-  tr.perfect td.svc::after{content:" ★";font-size:11px}
+  tr.perfect td.svc::after{content:"★";display:inline-block;margin-left:10px;font-size:18px;line-height:1;vertical-align:-2px;text-shadow:0 0 10px color-mix(in srgb,var(--perfect) 60%,transparent)}
   .sla.none{color:var(--faint)}
   .empty{color:var(--faint);font-family:var(--mono);font-size:13px;padding:16px}
 
@@ -711,7 +711,7 @@ const pageHTML = `<!doctype html>
   {{end}}
 
   <div class="legend">
-    <span><span class="sw" style="background:var(--perfect)"></span>100% ★ all windows</span>
+    <span><span class="sw" style="background:var(--perfect)"></span>100% ★ every window, ≥ 30 days of history</span>
     <span><span class="sw" style="background:var(--ok)"></span>≥ 99%</span>
     <span><span class="sw" style="background:var(--warn)"></span>95–99%</span>
     <span><span class="sw" style="background:var(--bad)"></span>&lt; 95%</span>
