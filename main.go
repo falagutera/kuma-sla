@@ -188,6 +188,31 @@ type viewRow struct {
 	Today *float64
 	SLA   map[string]*float64
 }
+
+// Perfect reports whether every window with data is exactly 100% (no down
+// beats at all). Rows with no data at all are not perfect.
+func (r viewRow) Perfect() bool {
+	seen := false
+	for _, v := range append([]*float64{r.Today}, slaValues(r.SLA)...) {
+		if v == nil {
+			continue
+		}
+		if *v < 100 {
+			return false
+		}
+		seen = true
+	}
+	return seen
+}
+
+func slaValues(m map[string]*float64) []*float64 {
+	out := make([]*float64, 0, len(m))
+	for _, v := range m {
+		out = append(out, v)
+	}
+	return out
+}
+
 type viewGroup struct {
 	Name string
 	Rows []viewRow
@@ -554,6 +579,9 @@ var tmplFuncs = template.FuncMap{
 		if *v >= 99.9 {
 			cls += " hi"
 		}
+		if *v >= 100 {
+			cls = "perfect hi"
+		}
 		return template.HTML(fmt.Sprintf(`<td class="sla %s">%.3f%%</td>`, cls, *v))
 	},
 	"fmtTime": func(t time.Time) string { return t.Local().Format("2006-01-02 15:04:05 MST") },
@@ -574,21 +602,21 @@ const pageHTML = `<!doctype html>
     --ground:#0c111b;--panel:#111826;--panel-2:#0f1522;--surface:#141c2b;
     --ink:#e6ecf5;--muted:#93a1b5;--faint:#66748a;--line:#20293a;--line-2:#1a2230;
     --accent:#2fd8a6;--accent-ink:#5fe6bd;--accent-dim:#173a33;
-    --ok:#2fd8a6;--warn:#e3a13a;--bad:#ef5f5f;
+    --ok:#2fd8a6;--warn:#e3a13a;--bad:#ef5f5f;--perfect:#b794ff;
     --shadow:0 1px 2px rgba(0,0,0,.35),0 12px 34px rgba(0,0,0,.4);
   }
   :root[data-theme="light"]{
     --ground:#eef2f7;--panel:#fff;--panel-2:#f5f8fb;--surface:#fff;
     --ink:#132033;--muted:#4f6076;--faint:#8091a5;--line:#dde5ef;--line-2:#e9eef5;
     --accent:#0f9d78;--accent-ink:#0c7e60;--accent-dim:#d6f2e8;
-    --ok:#0f9d78;--warn:#b9791a;--bad:#d33c3c;
+    --ok:#0f9d78;--warn:#b9791a;--bad:#d33c3c;--perfect:#7c4dff;
     --shadow:0 1px 2px rgba(20,30,45,.05),0 10px 26px rgba(20,30,45,.07);
   }
   @media (prefers-color-scheme:light){:root:not([data-theme]){
     --ground:#eef2f7;--panel:#fff;--panel-2:#f5f8fb;--surface:#fff;
     --ink:#132033;--muted:#4f6076;--faint:#8091a5;--line:#dde5ef;--line-2:#e9eef5;
     --accent:#0f9d78;--accent-ink:#0c7e60;--accent-dim:#d6f2e8;
-    --ok:#0f9d78;--warn:#b9791a;--bad:#d33c3c;
+    --ok:#0f9d78;--warn:#b9791a;--bad:#d33c3c;--perfect:#7c4dff;
     --shadow:0 1px 2px rgba(20,30,45,.05),0 10px 26px rgba(20,30,45,.07);
   }}
   *{box-sizing:border-box}
@@ -625,6 +653,9 @@ const pageHTML = `<!doctype html>
   .sla{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:13px;color:var(--muted)}
   .sla.ok{color:var(--ok)} .sla.warn{color:var(--warn)} .sla.bad{color:var(--bad)}
   .sla.hi{font-weight:700}
+  .sla.perfect{color:var(--perfect)}
+  tr.perfect td.svc{color:var(--perfect);box-shadow:inset 3px 0 0 var(--perfect)}
+  tr.perfect td.svc::after{content:" ★";font-size:11px}
   .sla.none{color:var(--faint)}
   .empty{color:var(--faint);font-family:var(--mono);font-size:13px;padding:16px}
 
@@ -660,7 +691,7 @@ const pageHTML = `<!doctype html>
     {{if .Rows}}<table>
       <thead><tr><th class="svc">Service</th>{{range windows}}<th>{{.}}</th>{{end}}</tr></thead>
       <tbody>
-      {{range .Rows}}<tr><td class="svc">{{.Label}}</td>{{$row := .}}{{range windows}}{{cell $row .}}{{end}}</tr>
+      {{range .Rows}}<tr{{if .Perfect}} class="perfect"{{end}}><td class="svc">{{.Label}}</td>{{$row := .}}{{range windows}}{{cell $row .}}{{end}}</tr>
       {{end}}
       </tbody>
     </table>{{else}}<div class="empty">no monitors matched this group's selection</div>{{end}}
@@ -669,6 +700,7 @@ const pageHTML = `<!doctype html>
   {{end}}
 
   <div class="legend">
+    <span><span class="sw" style="background:var(--perfect)"></span>100% ★ all windows</span>
     <span><span class="sw" style="background:var(--ok)"></span>≥ 99%</span>
     <span><span class="sw" style="background:var(--warn)"></span>95–99%</span>
     <span><span class="sw" style="background:var(--bad)"></span>&lt; 95%</span>
