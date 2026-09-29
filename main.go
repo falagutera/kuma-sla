@@ -46,6 +46,10 @@ var windows = []struct {
 	{"1y", 365},
 }
 
+// coverageSlackDays is how many days short of a window a monitor's history may
+// be and still have that window reported.
+const coverageSlackDays = 2
+
 // Service is the computed SLA of a monitor.
 type Service struct {
 	ID     int
@@ -189,20 +193,19 @@ type viewRow struct {
 	SLA   map[string]*float64
 }
 
-// Perfect reports whether every window with data is exactly 100% (no down
-// beats at all). Rows with no data at all are not perfect.
+// Perfect reports whether the row is exactly 100% (no down beats at all) in
+// today and in every long window. A missing window (monitor younger than it)
+// disqualifies the row, so a brand-new monitor never earns the highlight.
 func (r viewRow) Perfect() bool {
-	seen := false
+	if len(r.SLA) < len(windows) {
+		return false
+	}
 	for _, v := range append([]*float64{r.Today}, slaValues(r.SLA)...) {
-		if v == nil {
-			continue
-		}
-		if *v < 100 {
+		if v == nil || *v < 100 {
 			return false
 		}
-		seen = true
 	}
-	return seen
+	return true
 }
 
 func slaValues(m map[string]*float64) []*float64 {
@@ -446,18 +449,20 @@ func (s *server) compute(ctx context.Context) (snapshot, error) {
 		fmt.Fprintf(&sb, ",SUM(CASE WHEN timestamp>=%d THEN up ELSE 0 END) AS up_%s"+
 			",SUM(CASE WHEN timestamp>=%d THEN down ELSE 0 END) AS down_%s", th, w.Key, th, w.Key)
 	}
-	q := "SELECT monitor_id" + sb.String() + " FROM stat_daily GROUP BY monitor_id"
+	q := "SELECT monitor_id, MIN(timestamp)" + sb.String() + " FROM stat_daily GROUP BY monitor_id"
 	drows, err := s.db.QueryContext(ctx, q)
 	if err != nil {
 		return snapshot{}, fmt.Errorf("stat_daily: %w", err)
 	}
 	for drows.Next() {
-		vals := make([]any, 1+2*len(windows))
+		vals := make([]any, 2+2*len(windows))
 		var mid int
+		var first sql.NullInt64
 		vals[0] = &mid
+		vals[1] = &first
 		cells := make([]sql.NullInt64, 2*len(windows))
 		for i := range cells {
-			vals[i+1] = &cells[i]
+			vals[i+2] = &cells[i]
 		}
 		if err := drows.Scan(vals...); err != nil {
 			drows.Close()
@@ -468,6 +473,12 @@ func (s *server) compute(ctx context.Context) (snapshot, error) {
 			continue
 		}
 		for i, w := range windows {
+			// A window is only reported once the monitor's history covers it;
+			// otherwise a monitor created yesterday would show "100% over 1y".
+			// Two days of slack absorb day-boundary rounding and retention pruning.
+			if !first.Valid || first.Int64 > now.AddDate(0, 0, -w.Days+coverageSlackDays).Unix() {
+				continue // stays nil -> rendered as "—" (no data)
+			}
 			sv.SLA[w.Key] = pct(cells[2*i].Int64, cells[2*i+1].Int64)
 		}
 	}
@@ -704,7 +715,7 @@ const pageHTML = `<!doctype html>
     <span><span class="sw" style="background:var(--ok)"></span>≥ 99%</span>
     <span><span class="sw" style="background:var(--warn)"></span>95–99%</span>
     <span><span class="sw" style="background:var(--bad)"></span>&lt; 95%</span>
-    <span>— no data</span>
+    <span>— no data (monitor younger than the window)</span>
   </div>
 
   <footer>
