@@ -152,6 +152,10 @@ into the container) and they're hot-reloaded within ~60s.
 > Not using Docker? A hardened systemd unit is provided in
 > [`contrib/kuma-sla.service`](contrib/kuma-sla.service) as an alternative.
 
+## Versions
+
+Release images use the git tag, such as `v0.3.0`, and other builds use the short commit. The page footer shows the same value. A local build shows `dev`.
+
 ## Roadmap
 
 See [ROADMAP.md](ROADMAP.md) — notably a **MariaDB/MySQL backend** (for Kuma
