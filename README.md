@@ -36,13 +36,13 @@ table across long windows. `kuma-sla` reuses the data Kuma already keeps — the
 
 ## Quick start (Docker)
 
-The published image is `registry.gutocarvalho.net/open/kuma-sla:latest`.
+The published image is `registry.gutocarvalho.net/images/kuma-sla:latest`.
 
 ```sh
 docker run --rm -p 127.0.0.1:3002:3002 \
   -v /opt/uptimekuma/data:/data:ro \
   -v "$PWD/examples/domains":/config:ro \
-  registry.gutocarvalho.net/open/kuma-sla:latest
+  registry.gutocarvalho.net/images/kuma-sla:latest
 # open http://127.0.0.1:3002  (send Host: example.com to hit example.com.yaml)
 ```
 
@@ -120,7 +120,7 @@ YAML
 sudo tee /opt/kuma-sla/docker-compose.yml >/dev/null <<'YAML'
 services:
   kuma-sla:
-    image: registry.gutocarvalho.net/open/kuma-sla:latest
+    image: registry.gutocarvalho.net/images/kuma-sla:latest
     container_name: kuma-sla
     restart: always
     ports:

@@ -1,7 +1,7 @@
 # kuma-sla — build & deploy
 BINARY  := kuma-sla-linux-amd64
 LDFLAGS := -s -w
-IMAGE   := registry.gutocarvalho.net/open/kuma-sla:latest
+IMAGE   := registry.gutocarvalho.net/images/kuma-sla:latest
 
 # Deploy target (override on the command line): make deploy HOST=myhost
 HOST      ?= kuma-claude

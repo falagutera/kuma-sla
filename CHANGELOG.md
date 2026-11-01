@@ -1,7 +1,7 @@
 # Changelog
 
 All notable changes to kuma-sla. Versions follow [SemVer](https://semver.org/);
-container images are published as `registry.gutocarvalho.net/open/kuma-sla:<version>`.
+container images are published as `registry.gutocarvalho.net/images/kuma-sla:<version>`.
 
 ## 0.3.1 - 2026-10-31
 
