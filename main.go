@@ -722,6 +722,6 @@ const pageHTML = `<!doctype html>
 
   <footer>
     {{range .Footer}}{{if .URL}}<a href="{{.URL}}">{{.Text}}</a>{{else}}<span>{{.Text}}</span>{{end}}{{end}}
-    <a href="https://gitlab.gutocarvalho.net/open/gcn/kuma-sla/container_registry">kuma-sla {{version}}</a>
+    <a href="https://gitlab.gutocarvalho.net/images/kuma-sla/container_registry">kuma-sla {{version}}</a>
   </footer>
 </div>`
