@@ -87,7 +87,7 @@ type link struct {
 // defaultFooter is used when a domain defines no `footer:` (keeps the template
 // neutral for anyone using the project outside its original deployment).
 var defaultFooter = []link{
-	{Text: "powered by kuma-sla", URL: "https://gitlab.gutocarvalho.net/open/kuma-sla"},
+	{Text: "powered by kuma-sla", URL: "https://gitlab.gutocarvalho.net/open/gcn/kuma-sla"},
 	{Text: "MIT"},
 }
 
@@ -722,6 +722,6 @@ const pageHTML = `<!doctype html>
 
   <footer>
     {{range .Footer}}{{if .URL}}<a href="{{.URL}}">{{.Text}}</a>{{else}}<span>{{.Text}}</span>{{end}}{{end}}
-    <a href="https://gitlab.gutocarvalho.net/open/kuma-sla/container_registry">kuma-sla {{version}}</a>
+    <a href="https://gitlab.gutocarvalho.net/open/gcn/kuma-sla/container_registry">kuma-sla {{version}}</a>
   </footer>
 </div>`

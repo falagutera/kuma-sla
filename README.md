@@ -154,7 +154,7 @@ into the container) and they're hot-reloaded within ~60s.
 
 ## Versions
 
-Versions look like `X.Y.Z-BUILD`. `X.Y.Z` is in the `VERSION` file and follows SemVer, and `BUILD` is the GitLab pipeline number. A local build shows `X.Y.Z-dev`. The page footer shows the version and links to the [container registry](https://gitlab.gutocarvalho.net/open/kuma-sla/container_registry).
+Versions look like `X.Y.Z-BUILD`. `X.Y.Z` is in the `VERSION` file and follows SemVer, and `BUILD` is the GitLab pipeline number. A local build shows `X.Y.Z-dev`. The page footer shows the version and links to the [container registry](https://gitlab.gutocarvalho.net/open/gcn/kuma-sla/container_registry).
 
 | Image tag | Moves? |
 |---|---|
