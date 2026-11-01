@@ -3,6 +3,10 @@
 All notable changes to kuma-sla. Versions follow [SemVer](https://semver.org/);
 container images are published as `registry.gutocarvalho.net/open/kuma-sla:<version>`.
 
+## 0.3.1 - 2026-10-31
+
+- Versions are now `X.Y.Z-BUILD`, from the `VERSION` file and the CI pipeline.
+
 ## v0.3.0 — 2026-09-28
 
 ### Added

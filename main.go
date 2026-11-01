@@ -46,9 +46,6 @@ var windows = []struct {
 	{"1y", 365},
 }
 
-// version is set at build time: -ldflags "-X main.version=v0.3.0".
-var version = "dev"
-
 // coverageSlackDays is how many days short of a window a monitor's history may
 // be and still have that window reported.
 const coverageSlackDays = 2
@@ -725,6 +722,6 @@ const pageHTML = `<!doctype html>
 
   <footer>
     {{range .Footer}}{{if .URL}}<a href="{{.URL}}">{{.Text}}</a>{{else}}<span>{{.Text}}</span>{{end}}{{end}}
-    <a href="https://gitlab.gutocarvalho.net/open/kuma-sla/-/releases">kuma-sla {{version}}</a>
+    <a href="https://gitlab.gutocarvalho.net/open/kuma-sla/container_registry">kuma-sla {{version}}</a>
   </footer>
 </div>`

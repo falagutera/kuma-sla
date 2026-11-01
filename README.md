@@ -154,7 +154,13 @@ into the container) and they're hot-reloaded within ~60s.
 
 ## Versions
 
-Release images use the git tag, such as `v0.3.0`, and other builds use the short commit. The page footer shows the same value. A local build shows `dev`.
+Versions look like `X.Y.Z-BUILD`. `X.Y.Z` is in the `VERSION` file and follows SemVer, and `BUILD` is the GitLab pipeline number. A local build shows `X.Y.Z-dev`. The page footer shows the version and links to the [container registry](https://gitlab.gutocarvalho.net/open/kuma-sla/container_registry).
+
+| Image tag | Moves? |
+|---|---|
+| `X.Y.Z-BUILD` | Never. Pin this one in production. |
+| `X.Y.Z` | On each build of that version. |
+| `latest` | On each build. |
 
 ## Roadmap
 
