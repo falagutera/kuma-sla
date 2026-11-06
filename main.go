@@ -32,6 +32,8 @@ import (
 
 	"gopkg.in/yaml.v3"
 	_ "modernc.org/sqlite"
+
+	"kuma-sla/internal/relnotes"
 )
 
 // Windows shown, in table order. "today" is handled separately (heartbeat).
@@ -178,6 +180,11 @@ func main() {
 		}
 		fmt.Fprintln(w, "ok")
 	})
+	relnotes.Register(mux, relnotes.PageOptions{
+		App: "kuma-sla", Version: version, LangKey: "kuma-sla-lang",
+		Source: "https://gitlab.gutocarvalho.net/open/gcn/kuma-sla",
+		Style:  relnotes.StyleOf(pageHTML),
+	}, releases)
 	mux.HandleFunc("/", s.handleIndex)
 
 	log.Printf("kuma-sla listening on %s (db=%s, config=%s)", listen, dbPath, cfgDir)
@@ -722,6 +729,7 @@ const pageHTML = `<!doctype html>
 
   <footer>
     {{range .Footer}}{{if .URL}}<a href="{{.URL}}">{{.Text}}</a>{{else}}<span>{{.Text}}</span>{{end}}{{end}}
+    <a href="/release-notes">release notes</a>
     <a href="https://gitlab.gutocarvalho.net/images/kuma-sla/container_registry">kuma-sla {{version}}</a>
   </footer>
 </div>`
