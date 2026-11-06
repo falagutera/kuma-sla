@@ -72,8 +72,8 @@ type snapshot struct {
 // ---- per-domain config (YAML) ----
 
 type domainConfig struct {
-	Title    string  `yaml:"title"`
-	Subtitle string  `yaml:"subtitle"`
+	Title    text    `yaml:"title"`
+	Subtitle text    `yaml:"subtitle"`
 	LabelBy  string  `yaml:"label_by"` // "name" (default) or "host" (url host / hostname[:port])
 	Include  []incl  `yaml:"include"`  // implicit single group (no heading)
 	Groups   []group `yaml:"groups"`
@@ -82,19 +82,63 @@ type domainConfig struct {
 
 // link is a footer item: a text and an optional URL.
 type link struct {
-	Text string `yaml:"text"`
+	Text text   `yaml:"text"`
 	URL  string `yaml:"url"`
+}
+
+// text is a bilingual string. In YAML it is either a plain string (same in
+// both languages) or a map {pt: ..., en: ...}; a missing side falls back to
+// the other one.
+type text struct {
+	PT, EN string
+}
+
+func (t *text) UnmarshalYAML(node *yaml.Node) error {
+	if node.Kind == yaml.ScalarNode {
+		t.PT = strings.TrimSpace(node.Value)
+		t.EN = t.PT
+		return nil
+	}
+	var m struct {
+		PT string `yaml:"pt"`
+		EN string `yaml:"en"`
+	}
+	if err := node.Decode(&m); err != nil {
+		return err
+	}
+	t.PT, t.EN = strings.TrimSpace(m.PT), strings.TrimSpace(m.EN)
+	if t.PT == "" {
+		t.PT = t.EN
+	}
+	if t.EN == "" {
+		t.EN = t.PT
+	}
+	return nil
+}
+
+func both(s string) text { return text{PT: s, EN: s} }
+
+// IsZero reports an empty text.
+func (t text) IsZero() bool { return t.PT == "" && t.EN == "" }
+
+// HTML renders the text for the page: one span per language when they differ.
+func (t text) HTML() template.HTML {
+	pt, en := template.HTMLEscapeString(t.PT), template.HTMLEscapeString(t.EN)
+	if pt == en {
+		return template.HTML(pt)
+	}
+	return template.HTML(`<span class="i-pt">` + pt + `</span><span class="i-en">` + en + `</span>`)
 }
 
 // defaultFooter is used when a domain defines no `footer:` (keeps the template
 // neutral for anyone using the project outside its original deployment).
 var defaultFooter = []link{
-	{Text: "powered by kuma-sla", URL: "https://gitlab.gutocarvalho.net/open/gcn/kuma-sla"},
-	{Text: "MIT"},
+	{Text: text{PT: "feito com kuma-sla", EN: "powered by kuma-sla"}, URL: "https://gitlab.gutocarvalho.net/open/gcn/kuma-sla"},
+	{Text: both("MIT")},
 }
 
 type group struct {
-	Name    string `yaml:"name"`
+	Name    text   `yaml:"name"`
 	Include []incl `yaml:"include"`
 }
 
@@ -224,12 +268,12 @@ func slaValues(m map[string]*float64) []*float64 {
 }
 
 type viewGroup struct {
-	Name string
+	Name text
 	Rows []viewRow
 }
 type view struct {
-	Title     string
-	Subtitle  string
+	Title     text
+	Subtitle  text
 	Host      string
 	BrandHead string // first label of the host (e.g. "sla")
 	BrandTLD  string // the rest of the host (e.g. "bolha.io")
@@ -276,8 +320,8 @@ func buildView(host string, snap snapshot, cfg *domainConfig) view {
 	v := view{Host: host, Generated: snap.Generated, Err: snap.Err, Footer: defaultFooter}
 	v.BrandHead, v.BrandTLD = brandParts(host)
 	if cfg == nil {
-		v.Title = "SLA · " + host
-		v.Subtitle = "all monitors (no config for this domain)"
+		v.Title = both("SLA · " + host)
+		v.Subtitle = text{PT: "todos os monitores (sem configuração para este domínio)", EN: "all monitors (no config for this domain)"}
 		rows := make([]viewRow, 0, len(snap.Services))
 		for i := range snap.Services {
 			rows = append(rows, rowFrom(&snap.Services[i], "", ""))
@@ -286,7 +330,10 @@ func buildView(host string, snap snapshot, cfg *domainConfig) view {
 		v.Count = len(rows)
 		return v
 	}
-	v.Title = orDefault(cfg.Title, "SLA · "+host)
+	v.Title = cfg.Title
+	if v.Title.IsZero() {
+		v.Title = both("SLA · " + host)
+	}
 	v.Subtitle = cfg.Subtitle
 	if len(cfg.Footer) > 0 {
 		v.Footer = cfg.Footer
@@ -313,7 +360,7 @@ func buildView(host string, snap snapshot, cfg *domainConfig) view {
 				vg.Rows = append(vg.Rows, rowFrom(svc, label, cfg.LabelBy))
 			}
 		}
-		if len(vg.Rows) > 0 || g.Name != "" {
+		if len(vg.Rows) > 0 || !g.Name.IsZero() {
 			v.Groups = append(v.Groups, vg)
 			v.Count += len(vg.Rows)
 		}
@@ -562,13 +609,6 @@ func env(k, def string) string {
 	return def
 }
 
-func orDefault(s, def string) string {
-	if strings.TrimSpace(s) == "" {
-		return def
-	}
-	return s
-}
-
 var tmplFuncs = template.FuncMap{
 	"windows": func() []string {
 		out := []string{"today"}
@@ -607,11 +647,11 @@ var tmplFuncs = template.FuncMap{
 }
 
 const pageHTML = `<!doctype html>
-<html lang="en">
+<html lang="pt">
 <meta charset="utf-8">
-<title>{{.Title}}</title>
+<title data-pt="{{.Title.PT}}" data-en="{{.Title.EN}}">{{.Title.PT}}</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="description" content="{{.Title}} — uptime per service (today/7d/30d/90d/6m/1y), via Uptime Kuma.">
+<meta name="description" content="{{.Title.EN}} — uptime per service (today/7d/30d/90d/6m/1y), via Uptime Kuma.">
 <meta name="color-scheme" content="dark light">
 <style>
   :root{
@@ -685,51 +725,78 @@ const pageHTML = `<!doctype html>
   footer{margin-top:48px;padding-top:20px;border-top:1px solid var(--line);display:flex;flex-wrap:wrap;gap:6px 18px;font-family:var(--mono);font-size:12.5px;color:var(--faint)}
   footer a{color:var(--muted);text-decoration:none;border-bottom:1px dotted var(--line)}
   footer a:hover{color:var(--accent-ink)}
+  :root:not([lang="en"]) .i-en{display:none}
+  :root[lang="en"] .i-pt{display:none}
+  .langsw{display:flex;justify-content:flex-end;gap:6px;margin-bottom:12px}
+  .langsw button{font-family:var(--mono);font-size:12px;color:var(--muted);background:transparent;
+    border:1px solid var(--line);border-radius:999px;padding:3px 11px;cursor:pointer}
+  .langsw button:hover{color:var(--accent-ink);border-color:color-mix(in srgb,var(--accent) 45%,var(--line))}
+  .langsw button[aria-current="true"]{color:var(--ground);background:var(--accent);border-color:var(--accent)}
   @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 
 <div class="wrap">
+  <div class="langsw" role="group" aria-label="Idioma / Language">
+    <button type="button" data-set="pt">PT</button>
+    <button type="button" data-set="en">EN</button>
+  </div>
   <div class="conn" aria-label="summary">
-    <span><span class="k">SLA</span><span class="v">{{.Count}} services</span></span>
-    <span><span class="k">source</span><span class="v">Uptime Kuma</span></span>
-    <span><span class="k">version</span><span class="v">{{version}}</span></span>
-    <span><span class="k">updated</span><span class="v">{{fmtTime .Generated}}</span></span>
-    <span class="live"><span class="dot"></span>live</span>
+    <span><span class="k">SLA</span><span class="v">{{.Count}} <span class="i-pt">serviços</span><span class="i-en">services</span></span></span>
+    <span><span class="k"><span class="i-pt">fonte</span><span class="i-en">source</span></span><span class="v">Uptime Kuma</span></span>
+    <span><span class="k"><span class="i-pt">versão</span><span class="i-en">version</span></span><span class="v">{{version}}</span></span>
+    <span><span class="k"><span class="i-pt">atualizado</span><span class="i-en">updated</span></span><span class="v">{{fmtTime .Generated}}</span></span>
+    <span class="live"><span class="dot"></span><span class="i-pt">ao vivo</span><span class="i-en">live</span></span>
   </div>
 
   <header>
     <h1 class="brand">{{.BrandHead}}{{if .BrandTLD}}<span class="dot">.</span><span class="tld">{{.BrandTLD}}</span>{{end}}</h1>
-    {{if .Subtitle}}<p class="lede">{{.Subtitle}}</p>{{end}}
+    {{if not .Subtitle.IsZero}}<p class="lede">{{.Subtitle.HTML}}</p>{{end}}
   </header>
 
-  {{if .Err}}<div class="err">error reading data: {{.Err}}</div>{{end}}
+  {{if .Err}}<div class="err"><span class="i-pt">erro ao ler os dados:</span><span class="i-en">error reading data:</span> {{.Err}}</div>{{end}}
 
   {{range .Groups}}
   <section class="cat">
-    {{if .Name}}<div class="cat-head"><h2>{{.Name}}</h2><span class="rule"></span></div>{{end}}
+    {{if not .Name.IsZero}}<div class="cat-head"><h2>{{.Name.HTML}}</h2><span class="rule"></span></div>{{end}}
     <div class="panel">
     {{if .Rows}}<table>
-      <thead><tr><th class="svc">Service</th>{{range windows}}<th>{{.}}</th>{{end}}</tr></thead>
+      <thead><tr><th class="svc"><span class="i-pt">Serviço</span><span class="i-en">Service</span></th>{{range windows}}<th>{{.}}</th>{{end}}</tr></thead>
       <tbody>
       {{range .Rows}}<tr{{if .Perfect}} class="perfect"{{end}}><td class="svc">{{.Label}}</td>{{$row := .}}{{range windows}}{{cell $row .}}{{end}}</tr>
       {{end}}
       </tbody>
-    </table>{{else}}<div class="empty">no monitors matched this group's selection</div>{{end}}
+    </table>{{else}}<div class="empty"><span class="i-pt">nenhum monitor corresponde à seleção deste grupo</span><span class="i-en">no monitors matched this group's selection</span></div>{{end}}
     </div>
   </section>
   {{end}}
 
   <div class="legend">
-    <span><span class="sw" style="background:var(--ok)"></span>100% (★ every window, ≥ 30 days of history)</span>
+    <span><span class="sw" style="background:var(--ok)"></span>100% <span class="i-pt">(★ em todas as janelas, ≥ 30 dias de histórico)</span><span class="i-en">(★ every window, ≥ 30 days of history)</span></span>
     <span><span class="sw" style="background:var(--high)"></span>99–100%</span>
     <span><span class="sw" style="background:var(--warn)"></span>95–99%</span>
     <span><span class="sw" style="background:var(--bad)"></span>&lt; 95%</span>
-    <span>— no data (monitor younger than the window)</span>
+    <span>— <span class="i-pt">sem dados (monitor mais novo que a janela)</span><span class="i-en">no data (monitor younger than the window)</span></span>
   </div>
 
   <footer>
-    {{range .Footer}}{{if .URL}}<a href="{{.URL}}">{{.Text}}</a>{{else}}<span>{{.Text}}</span>{{end}}{{end}}
-    <a href="/release-notes">release notes</a>
+    {{range .Footer}}{{if .URL}}<a href="{{.URL}}">{{.Text.HTML}}</a>{{else}}<span>{{.Text.HTML}}</span>{{end}}{{end}}
+    <a href="/release-notes"><span class="i-pt">novidades</span><span class="i-en">release notes</span></a>
     <a href="https://gitlab.gutocarvalho.net/images/kuma-sla/container_registry">kuma-sla {{version}}</a>
   </footer>
-</div>`
+</div>
+<script>
+(function(){
+  var key="kuma-sla-lang", root=document.documentElement, b=document.querySelectorAll(".langsw button"), title=document.querySelector("title");
+  function set(l){
+    root.setAttribute("lang",l);
+    try{ localStorage.setItem(key,l); }catch(e){}
+    if(title) document.title=title.getAttribute("data-"+l)||document.title;
+    for(var i=0;i<b.length;i++) b[i].setAttribute("aria-current", b[i].getAttribute("data-set")===l?"true":"false");
+  }
+  var l=null; try{ l=localStorage.getItem(key); }catch(e){}
+  var q=/[?&]lang=(pt|en)/.exec(location.search); if(q) l=q[1];
+  if(!l) l=(navigator.language||"pt").toLowerCase().indexOf("pt")===0?"pt":"en";
+  set(l);
+  for(var i=0;i<b.length;i++) b[i].addEventListener("click",function(){ set(this.getAttribute("data-set")); });
+})();
+</script>`

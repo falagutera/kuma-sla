@@ -79,9 +79,9 @@ matches no file falls back to listing every active monitor.
 
 ```yaml
 title: SLA · example.com
-subtitle: our public services
+subtitle: { pt: "nossos serviços públicos", en: "our public services" }
 groups:
-  - name: Websites
+  - name: { pt: Sites, en: Websites }
     include:
       - "www.example.com"          # exact monitor name (case-insensitive)
       - "id:12"                    # by monitor id
@@ -94,6 +94,11 @@ groups:
 Set `label_by: host` at the top of a file to label rows by each monitor's
 host/URL (URL host, or `hostname:port`) instead of its Kuma name; the default is
 `name`. A per-entry `label` always overrides it.
+
+The page is bilingual (Portuguese and English, switch at the top; the choice is
+remembered in the browser, `?lang=en` forces it). Every text in a domain file
+(`title`, `subtitle`, group `name`, footer `text`) takes either a plain string,
+shown in both languages, or `{ pt: ..., en: ... }`.
 
 See [`examples/domains/example.com.yaml`](examples/domains/example.com.yaml).
 

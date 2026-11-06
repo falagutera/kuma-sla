@@ -12,6 +12,9 @@
 #   - "glob:*.example.com"      glob on the name (case-insensitive; * ? [..])
 #   - { glob: "*.tools", label: "Tools" }   map form; `label` renames a single match
 #
+# Texts (title, subtitle, group names, footer text) take a plain string, shown
+# in both languages, or { pt: "...", en: "..." } for the PT/EN switch.
+#
 # Files are hot-reloaded (~60s), so edits take effect without a restart.
 
 title: SLA · example.com

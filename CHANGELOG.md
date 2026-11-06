@@ -3,6 +3,12 @@
 All notable changes to kuma-sla. Versions follow [SemVer](https://semver.org/);
 container images are published as `registry.gutocarvalho.net/images/kuma-sla:<version>`.
 
+## 0.4.0 — 2026-11-06
+
+- **Portuguese and English**: the page has a PT/EN switch (remembered in the browser; `?lang=en` forces it), and every fixed text is translated.
+- Domain configs take `{ pt: ..., en: ... }` for `title`, `subtitle`, group `name` and footer `text`; a plain string still works and shows in both languages.
+- The release notes page follows the same switch.
+
 ## 0.3.2 — 2026-11-06
 
 - Release notes page at `/release-notes`, linked in the footer next to the version, built from this file; the same data as JSON at `/release-notes.json`.
