@@ -12,9 +12,9 @@ REMOTE_DIR ?= /opt/kuma-sla
 build: ## build a static linux/amd64 binary
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="$(LDFLAGS)" -o $(BINARY) .
 
-vet: ## go vet + gofmt check
+vet: ## go vet + gofmt check (fails on unformatted files, like CI)
 	go vet ./...
-	gofmt -l .
+	@out=$$(gofmt -l .); if [ -n "$$out" ]; then echo "gofmt needed:"; echo "$$out"; exit 1; fi
 
 test: ## go test
 	go test ./...
