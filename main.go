@@ -710,6 +710,7 @@ var tmplFuncs = template.FuncMap{
 
 const pageHTML = `<!doctype html>
 <html lang="pt">
+<head>
 <meta charset="utf-8">
 <title data-pt="{{.Title.PT}}" data-en="{{.Title.EN}}">{{.Title.PT}}</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -797,6 +798,8 @@ const pageHTML = `<!doctype html>
   .langsw button[aria-current="true"]{color:var(--ground);background:var(--accent);border-color:var(--accent)}
   @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
+</head>
+<body>
 
 <div class="wrap">
   <div class="langsw" role="group" aria-label="Idioma / Language">
@@ -862,4 +865,6 @@ const pageHTML = `<!doctype html>
   set(l);
   for(var i=0;i<b.length;i++) b[i].addEventListener("click",function(){ set(this.getAttribute("data-set")); });
 })();
-</script>`
+</script>
+</body>
+</html>`

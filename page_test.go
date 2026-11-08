@@ -102,3 +102,18 @@ func TestContentSecurityPolicy(t *testing.T) {
 		}
 	}
 }
+
+// The edge injects the bolha-bar <script> before </head> (or after <head>, or before </body>):
+// the page must keep those tags or the menu never shows.
+func TestPageHasHeadForTheEdgeBar(t *testing.T) {
+	tmpl := template.Must(template.New("page").Funcs(tmplFuncs).Parse(pageHTML))
+	var b strings.Builder
+	if err := tmpl.Execute(&b, buildView("example.org", snapshot{}, nil)); err != nil {
+		t.Fatal(err)
+	}
+	for _, tag := range []string{"<head>", "</head>", "<body>", "</body>"} {
+		if !strings.Contains(b.String(), tag) {
+			t.Errorf("page has no %s", tag)
+		}
+	}
+}

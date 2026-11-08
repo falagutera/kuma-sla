@@ -3,6 +3,10 @@
 All notable changes to kuma-sla. Versions follow [SemVer](https://semver.org/);
 container images are published as `registry.gutocarvalho.net/images/kuma-sla:<version>`.
 
+## 0.4.2 — 2026-11-08
+
+- The bolha menu (the floating “● bolha” button with the other services) now shows on the page: the page has proper `<head>` and `<body>` sections again, which is where the menu is added.
+
 ## 0.4.1 — 2026-11-08
 
 - When the Uptime Kuma database can't be read, the page shows a short notice that the numbers may be out of date instead of the raw database error; the error goes to the log.
