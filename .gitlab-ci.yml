@@ -8,19 +8,6 @@ include:
     ref: main
 stages: [security, test, build]
 
-# go.mod needs Go 1.27 and the template's images run an older Go (GOTOOLCHAIN=local; the gosec
-# image cannot type-check 1.27 packages): run both scanners on 1.27, same flags as the template.
-sec:govulncheck:
-  image: golang:1.27-alpine
-
-sec:gosec:
-  image: golang:1.27-alpine
-  variables:
-    CGO_ENABLED: "0"
-  script:
-    - go install github.com/securego/gosec/v2/cmd/gosec@latest
-    - "$(go env GOPATH)/bin/gosec -severity medium -confidence medium ./..."
-
 test:
   stage: test
   image: golang:1.27-alpine
