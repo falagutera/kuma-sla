@@ -44,7 +44,8 @@ with the env above) are shortcuts for the same.
 
 | Where | What |
 |---|---|
-| `main.go` `main`, `openDB` | env (`KUMA_DB`, `LISTEN`, `CONFIG_DIR`), read-only DB, routes, refresh loop |
+| `main.go` `main`, `openDB` | env (`KUMA_DB`, `LISTEN`, `CONFIG_DIR`), read-only DB, refresh loop |
+| `main.go` `handler`, `contentSecurityPolicy`, `securityHeaders` | routes; the CSP hashes the inline `<script>`/`<style>` blocks of both pages at startup |
 | `main.go` `compute` | the three queries: `monitor` (active only), `stat_daily` (long windows), `heartbeat` (today, UTC) |
 | `main.go` `windows`, `coverageSlackDays`, `pct` | window set, history-coverage rule, `up / (up + down)` |
 | `main.go` `domainConfig`, `text`, `incl`, `loadConfigs` | per-domain YAML (`<host>.yaml`), bilingual texts, selectors |
@@ -58,7 +59,8 @@ with the env above) are shortcuts for the same.
 
 Tests: `sla_test.go` (`TestComputeFromKumaDB`: fixture Kuma DB in a temp dir), `render_test.go`
 (`TestBilingualPage`, `TestDomainConfigsParse`: `examples/domains`, and `domains/` when present),
-`changelog_test.go` (`TestChangelogHasVersion`).
+`changelog_test.go` (`TestChangelogHasVersion`), `page_test.go` (`TestDatabaseErrorNotShown`,
+`TestContentSecurityPolicy`: the served pages over `handler()`).
 
 ## Rules that must hold
 
@@ -76,11 +78,16 @@ Tests: `sla_test.go` (`TestComputeFromKumaDB`: fixture Kuma DB in a temp dir), `
    README too.
 4. **Both languages.** Every fixed text is a `span.i-pt` + `span.i-en` pair; config texts accept a
    plain string or `{pt, en}`, a missing side falls back to the other (`TestBilingualPage`).
-5. **Escaping.** Monitor names, labels and config texts reach the page through `html/template`
+5. **No inline code outside the hashed blocks.** The CSP allows only the `<script>` and `<style>`
+   blocks of the page and of `/release-notes` (hashed when the server starts, so they must not
+   depend on the data) and same-origin files. No `style=""` or `on*=` attributes, no attributes on
+   `<script>`/`<style>`; a refresh error is logged, never rendered (`TestContentSecurityPolicy`,
+   `TestDatabaseErrorNotShown`).
+6. **Escaping.** Monitor names, labels and config texts reach the page through `html/template`
    or `text.HTML` (which escapes). Any new `template.HTML` must escape its input.
-6. **Bounded work.** One refresh per 60 s with a 20 s timeout and 2 DB connections; requests only
+7. **Bounded work.** One refresh per 60 s with a 20 s timeout and 2 DB connections; requests only
    render the cached snapshot. Do not query the database from a handler (except `/healthz`'s ping).
-7. **Config compatibility.** Existing YAML keeps working: selectors (`"name"`, `"id:N"`,
+8. **Config compatibility.** Existing YAML keeps working: selectors (`"name"`, `"id:N"`,
    `"glob:…"`, map form `select|name|id|glob` + `label`), `label_by: name|host`, top-level
    `include` without groups, `footer`. Update `examples/domains/example.com.yaml` and the README
    with any new key.

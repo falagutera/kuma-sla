@@ -3,6 +3,11 @@
 All notable changes to kuma-sla. Versions follow [SemVer](https://semver.org/);
 container images are published as `registry.gutocarvalho.net/images/kuma-sla:<version>`.
 
+## 0.4.1 — 2026-11-08
+
+- When the Uptime Kuma database can't be read, the page shows a short notice that the numbers may be out of date instead of the raw database error; the error goes to the log.
+- The pages send a strict `Content-Security-Policy` (only their own inline script and style, by hash), plus `X-Content-Type-Options` and `Referrer-Policy`.
+
 ## 0.4.0 — 2026-11-06
 
 - **Portuguese and English**: the page has a PT/EN switch (remembered in the browser; `?lang=en` forces it), and every fixed text is translated.

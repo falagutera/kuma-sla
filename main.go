@@ -16,14 +16,18 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/base64"
 	"fmt"
 	"html/template"
 	"log"
 	"net/http"
+	"net/http/httptest"
 	neturl "net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -66,7 +70,7 @@ type snapshot struct {
 	Services  []Service // sorted by name
 	byID      map[int]*Service
 	byName    map[string]*Service // key = lowercased name
-	Err       string
+	Failed    bool                // the last refresh failed (the error is logged, never shown)
 }
 
 // ---- per-domain config (YAML) ----
@@ -211,24 +215,70 @@ func main() {
 		}
 	}()
 
+	log.Printf("kuma-sla listening on %s (db=%s, config=%s)", listen, dbPath, cfgDir)
+	srv := &http.Server{Addr: listen, Handler: s.handler(), ReadHeaderTimeout: 10 * time.Second}
+	log.Fatal(srv.ListenAndServe())
+}
+
+// handler is every route, behind securityHeaders.
+func (s *server) handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
-		if err := db.PingContext(r.Context()); err != nil {
+		if err := s.db.PingContext(r.Context()); err != nil {
+			log.Printf("healthz: %v", err)
 			http.Error(w, "db down", http.StatusServiceUnavailable)
 			return
 		}
 		fmt.Fprintln(w, "ok")
 	})
-	relnotes.Register(mux, relnotes.PageOptions{
+	notes := relnotes.PageOptions{
 		App: "kuma-sla", Version: version, LangKey: "kuma-sla-lang",
 		Source: "https://gitlab.gutocarvalho.net/open/gcn/kuma-sla",
 		Style:  relnotes.StyleOf(pageHTML),
-	}, releases)
+	}
+	relnotes.Register(mux, notes, releases)
 	mux.HandleFunc("/", s.handleIndex)
+	return securityHeaders(contentSecurityPolicy(s.tmpl, notes), mux)
+}
 
-	log.Printf("kuma-sla listening on %s (db=%s, config=%s)", listen, dbPath, cfgDir)
-	srv := &http.Server{Addr: listen, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
-	log.Fatal(srv.ListenAndServe())
+var inlineRe = regexp.MustCompile(`(?s)<(script|style)>(.*?)</(?:script|style)>`)
+
+// contentSecurityPolicy allows, besides same-origin files (an edge may inject
+// a script and its CSS from the site's own origin), only the exact inline
+// <script> and <style> blocks of our two pages, by hash. Those blocks do not
+// depend on the data, so they are hashed once from a page rendered with no
+// monitors; a style="" attribute or any other inline code is refused.
+func contentSecurityPolicy(tmpl *template.Template, notes relnotes.PageOptions) string {
+	var page strings.Builder
+	if err := tmpl.Execute(&page, buildView("example.org", snapshot{}, nil)); err != nil {
+		log.Fatalf("template: %v", err)
+	}
+	rec := httptest.NewRecorder()
+	relnotes.PageHandler(notes, releases).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/release-notes", nil))
+	src := map[string][]string{}
+	seen := map[string]bool{}
+	for _, m := range inlineRe.FindAllStringSubmatch(page.String()+rec.Body.String(), -1) {
+		sum := sha256.Sum256([]byte(m[2]))
+		h := "'sha256-" + base64.StdEncoding.EncodeToString(sum[:]) + "'"
+		if !seen[m[1]+h] {
+			seen[m[1]+h] = true
+			src[m[1]] = append(src[m[1]], h)
+		}
+	}
+	return "default-src 'none'; script-src 'self' " + strings.Join(src["script"], " ") +
+		"; style-src 'self' " + strings.Join(src["style"], " ") +
+		"; img-src 'self' data:; font-src 'self'; connect-src 'self'" +
+		"; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+}
+
+func securityHeaders(csp string, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("Content-Security-Policy", csp)
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("Referrer-Policy", "no-referrer")
+		next.ServeHTTP(w, r)
+	})
 }
 
 // openDB opens Kuma's SQLite database read-only: mode=ro and query_only, so
@@ -292,7 +342,7 @@ type view struct {
 	Generated time.Time
 	Groups    []viewGroup
 	Footer    []link
-	Err       string
+	Failed    bool
 }
 
 // brandParts splits the host at the first dot: "sla.bolha.io" -> ("sla","bolha.io").
@@ -328,7 +378,7 @@ func (s *server) handleIndex(w http.ResponseWriter, r *http.Request) {
 // buildView resolves the domain config against the snapshot. With no config it
 // lists every active monitor (fallback).
 func buildView(host string, snap snapshot, cfg *domainConfig) view {
-	v := view{Host: host, Generated: snap.Generated, Err: snap.Err, Footer: defaultFooter}
+	v := view{Host: host, Generated: snap.Generated, Failed: snap.Failed, Footer: defaultFooter}
 	v.BrandHead, v.BrandTLD = brandParts(host)
 	if cfg == nil {
 		v.Title = both("SLA · " + host)
@@ -436,7 +486,7 @@ func (s *server) reload() {
 	if err != nil {
 		log.Printf("compute: %v", err)
 		s.mu.Lock()
-		s.snap.Err = err.Error()
+		s.snap.Failed = true
 		s.snap.Generated = time.Now()
 		s.mu.Unlock()
 		return
@@ -732,6 +782,7 @@ const pageHTML = `<!doctype html>
 
   .legend{display:flex;gap:16px;flex-wrap:wrap;color:var(--faint);font-family:var(--mono);font-size:12px;margin:16px 2px 0}
   .legend .sw{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:middle}
+  .legend .sw.ok{background:var(--ok)} .legend .sw.high{background:var(--high)} .legend .sw.warn{background:var(--warn)} .legend .sw.bad{background:var(--bad)}
   .err{background:color-mix(in srgb,var(--bad) 12%,transparent);border:1px solid var(--bad);color:var(--bad);padding:10px 14px;border-radius:12px;margin-bottom:16px;font-family:var(--mono);font-size:13px}
 
   footer{margin-top:48px;padding-top:20px;border-top:1px solid var(--line);display:flex;flex-wrap:wrap;gap:6px 18px;font-family:var(--mono);font-size:12.5px;color:var(--faint)}
@@ -765,7 +816,7 @@ const pageHTML = `<!doctype html>
     {{if not .Subtitle.IsZero}}<p class="lede">{{.Subtitle.HTML}}</p>{{end}}
   </header>
 
-  {{if .Err}}<div class="err"><span class="i-pt">erro ao ler os dados:</span><span class="i-en">error reading data:</span> {{.Err}}</div>{{end}}
+  {{if .Failed}}<div class="err" role="alert"><span class="i-pt">não foi possível ler os dados do Uptime Kuma agora; os números podem estar desatualizados.</span><span class="i-en">could not read the Uptime Kuma data right now; the numbers may be out of date.</span></div>{{end}}
 
   {{range .Groups}}
   <section class="cat">
@@ -783,10 +834,10 @@ const pageHTML = `<!doctype html>
   {{end}}
 
   <div class="legend">
-    <span><span class="sw" style="background:var(--ok)"></span>100% <span class="i-pt">(★ em todas as janelas, ≥ 30 dias de histórico)</span><span class="i-en">(★ every window, ≥ 30 days of history)</span></span>
-    <span><span class="sw" style="background:var(--high)"></span>99–100%</span>
-    <span><span class="sw" style="background:var(--warn)"></span>95–99%</span>
-    <span><span class="sw" style="background:var(--bad)"></span>&lt; 95%</span>
+    <span><span class="sw ok"></span>100% <span class="i-pt">(★ em todas as janelas, ≥ 30 dias de histórico)</span><span class="i-en">(★ every window, ≥ 30 days of history)</span></span>
+    <span><span class="sw high"></span>99–100%</span>
+    <span><span class="sw warn"></span>95–99%</span>
+    <span><span class="sw bad"></span>&lt; 95%</span>
     <span>— <span class="i-pt">sem dados (monitor mais novo que a janela)</span><span class="i-en">no data (monitor younger than the window)</span></span>
   </div>
 
