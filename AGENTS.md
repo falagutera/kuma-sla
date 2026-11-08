@@ -18,8 +18,11 @@ go vet ./...
 go test ./...     # no external services: the SLA test builds its own SQLite file
 ```
 
-CI (`.gitlab-ci.yml`) runs only `go vet` and `gofmt`, then builds; it does **not** run `go test`,
-so run it yourself before every commit.
+CI (`.gitlab-ci.yml`) runs the shared security stage (gitleaks, govulncheck and trivy gate the
+pipeline; gosec, semgrep, hadolint and yamllint only report), then `go vet`, gofmt, `go test -p 1`
+and govulncheck. On the default branch it keeps the static binary (`kuma-sla-linux-amd64`) as a job
+artifact and publishes the image `registry.gutocarvalho.net/images/kuma-sla` (`X.Y.Z-BUILD`,
+`X.Y.Z`, `latest`). `domains/` is not tracked, so CI checks only `examples/domains`.
 
 To look at the page, run it against a small fixture database (`sqlite3` CLI, or a copy of a real
 `kuma.db` with its `-wal`/`-shm` files) and send the `Host` of a config:

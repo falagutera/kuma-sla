@@ -457,7 +457,7 @@ func (s *server) loadConfigs() map[string]*domainConfig {
 		if e.IsDir() || !(strings.HasSuffix(name, ".yaml") || strings.HasSuffix(name, ".yml")) {
 			continue
 		}
-		b, err := os.ReadFile(filepath.Join(s.cfgDir, name))
+		b, err := os.ReadFile(filepath.Join(s.cfgDir, name)) // #nosec G304 -- a *.yaml entry listed by ReadDir of the operator's CONFIG_DIR
 		if err != nil {
 			log.Printf("config %s: %v", name, err)
 			continue
@@ -514,6 +514,7 @@ func (s *server) compute(ctx context.Context) (snapshot, error) {
 		fmt.Fprintf(&sb, ",SUM(CASE WHEN timestamp>=%d THEN up ELSE 0 END) AS up_%s"+
 			",SUM(CASE WHEN timestamp>=%d THEN down ELSE 0 END) AS down_%s", th, w.Key, th, w.Key)
 	}
+	// #nosec G202 -- sb holds only the fixed window keys and int64 thresholds formatted above, no input
 	q := "SELECT monitor_id, MIN(timestamp)" + sb.String() + " FROM stat_daily GROUP BY monitor_id"
 	drows, err := s.db.QueryContext(ctx, q)
 	if err != nil {
