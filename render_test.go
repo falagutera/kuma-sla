@@ -2,6 +2,7 @@ package main
 
 import (
 	"html/template"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -50,16 +51,26 @@ func TestBilingualPage(t *testing.T) {
 	}
 }
 
+// The example config always parses; the local domains/ dir (deployment
+// configs, not tracked in git) is checked too when it exists.
 func TestDomainConfigsParse(t *testing.T) {
-	s := &server{cfgDir: "domains"}
-	cfgs := s.loadConfigs()
-	if len(cfgs) != 2 {
-		t.Fatalf("got %d configs", len(cfgs))
-	}
-	for host, c := range cfgs {
-		for _, g := range c.Groups {
-			if g.Name.PT == "" || g.Name.EN == "" {
-				t.Errorf("%s: group without name", host)
+	for _, dir := range []string{"examples/domains", "domains"} {
+		files, _ := filepath.Glob(filepath.Join(dir, "*.y*ml"))
+		if len(files) == 0 {
+			if dir == "examples/domains" {
+				t.Fatal("no example config")
+			}
+			continue
+		}
+		cfgs := (&server{cfgDir: dir}).loadConfigs()
+		if len(cfgs) != len(files) {
+			t.Fatalf("%s: %d of %d configs parsed", dir, len(cfgs), len(files))
+		}
+		for host, c := range cfgs {
+			for _, g := range c.Groups {
+				if g.Name.PT == "" || g.Name.EN == "" {
+					t.Errorf("%s: group without name", host)
+				}
 			}
 		}
 	}

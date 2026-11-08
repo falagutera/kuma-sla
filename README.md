@@ -167,6 +167,13 @@ Versions look like `X.Y.Z-BUILD`. `X.Y.Z` is in the `VERSION` file and follows S
 | `X.Y.Z` | On each build of that version. |
 | `latest` | On each build. |
 
+## Contributing
+
+`go test ./...` needs nothing else (the SLA test builds its own SQLite file).
+[AGENTS.md](AGENTS.md) has the commands, a map of the code and the rules a change must keep
+(read-only access to Kuma, honest windows, both languages); it is written for people and for
+coding agents (Claude Code, Codex, Cursor read it).
+
 ## Roadmap
 
 See [ROADMAP.md](ROADMAP.md) — notably a **MariaDB/MySQL backend** (for Kuma

@@ -6,3 +6,5 @@
 # Deployment-specific domain configs live here locally and are NOT tracked.
 # See examples/domains/ for the format.
 /domains/
+
+.claude/worktrees/

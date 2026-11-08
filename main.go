@@ -195,14 +195,9 @@ func main() {
 	cfgDir := env("CONFIG_DIR", "/opt/kuma-sla/domains")
 	refresh := 60 * time.Second
 
-	dsn := fmt.Sprintf("file:%s?mode=ro&_pragma=busy_timeout(5000)&_pragma=query_only(1)", dbPath)
-	db, err := sql.Open("sqlite", dsn)
+	db, err := openDB(dbPath)
 	if err != nil {
-		log.Fatalf("open db: %v", err)
-	}
-	db.SetMaxOpenConns(2)
-	if err := db.Ping(); err != nil {
-		log.Fatalf("ping db (%s): %v", dbPath, err)
+		log.Fatalf("open db (%s): %v", dbPath, err)
 	}
 
 	s := &server{db: db, cfgDir: cfgDir, tmpl: template.Must(template.New("page").Funcs(tmplFuncs).Parse(pageHTML))}
@@ -234,6 +229,22 @@ func main() {
 	log.Printf("kuma-sla listening on %s (db=%s, config=%s)", listen, dbPath, cfgDir)
 	srv := &http.Server{Addr: listen, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 	log.Fatal(srv.ListenAndServe())
+}
+
+// openDB opens Kuma's SQLite database read-only: mode=ro and query_only, so
+// kuma-sla can never write to it (TestComputeFromKumaDB checks a write fails).
+func openDB(path string) (*sql.DB, error) {
+	dsn := fmt.Sprintf("file:%s?mode=ro&_pragma=busy_timeout(5000)&_pragma=query_only(1)", path)
+	db, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		return nil, err
+	}
+	db.SetMaxOpenConns(2)
+	if err := db.Ping(); err != nil {
+		db.Close()
+		return nil, err
+	}
+	return db, nil
 }
 
 // ---- render ----
