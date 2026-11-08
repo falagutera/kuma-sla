@@ -28,11 +28,61 @@ table across long windows. `kuma-sla` reuses the data Kuma already keeps — the
 - Everything is recomputed on a timer (~60s) and cached; each HTTP request just renders.
 - Requests are routed by `Host` header to the matching domain config.
 
+## Testing and security
+
+kuma-sla is a public page with no login that reads another app's database, so what matters is that it never writes to that database and never shows more than the configured monitors. What is done today (2026-11-08):
+
+**Every pipeline.** GitLab CI ([`.gitlab-ci.yml`](.gitlab-ci.yml), plus the shared security stage from `open/gcn/ci-templates`, file `security.yml`) runs on every push. The test job runs on every pipeline; the security stage runs on every merge request and every push to `main`; the binary and the image are built only from `main`.
+
+- Blocking (the pipeline fails and no image is published):
+  - `go vet`, a `gofmt` check, and the full test suite (no services: the tests build their own SQLite files);
+  - `govulncheck`: known vulnerabilities in Go code paths this app actually reaches;
+  - `gitleaks`: secrets committed to the repository;
+  - `trivy`: critical vulnerabilities that have a fix, secrets and misconfigurations in the repository.
+- Informative (reported, not blocking): `semgrep`, `gosec`, `hadolint` (Dockerfile), `yamllint`, and `poutine` (security of the CI pipeline itself).
+
+**The test suite.** 6 tests:
+
+- the numbers (`TestComputeFromKumaDB`): a small Kuma database is built in a temp dir; a write through kuma-sla's connection must fail (read-only), inactive monitors are hidden, a window is shown only once the monitor's history covers it, and pending or maintenance beats stay out of today's numbers;
+- the page: both languages, config texts as a plain string or `{pt, en}` (`TestBilingualPage`); the example config, and the local `domains/` when present, parse (`TestDomainConfigsParse`);
+- the served pages over the real handler: a failed refresh shows a generic notice and never the database error (`TestDatabaseErrorNotShown`); `/` and `/release-notes` send a `Content-Security-Policy` that allows exactly their own inline script and style by hash, with no `unsafe-inline` and no inline attributes left (`TestContentSecurityPolicy`);
+- every `VERSION` has its `CHANGELOG.md` entry (`TestChangelogHasVersion`).
+
+**Reviews.** No independent security review or penetration test has been done. The fixes in 0.4.1 (database errors shown on the public page, no CSP) came from a read of the code while writing [AGENTS.md](AGENTS.md); each has a test.
+
+**Reporting a vulnerability.** Write to contato@gutocarvalho.net. Please don't open a public issue for it.
+
+## Architecture
+
+**Why it exists.** Uptime Kuma already keeps a year of per-day uptime counts, but its status page doesn't show a compact per-service table over long windows. kuma-sla shows that table from the data Kuma already has, without a second monitoring system.
+
+**In plain words.**
+
+1. At start, and then every 60 seconds, kuma-sla reads the domain configs (`<hostname>.yaml` in `CONFIG_DIR`) and runs three read-only queries on Kuma's SQLite file: the active monitors, their `stat_daily` counts (for 7d to 1y) and today's `heartbeat` rows.
+2. It computes `up / (up + down)` per monitor and window and keeps the result in memory. If a refresh fails, the last good numbers stay, the error goes to the log and the page shows a notice.
+3. A request is matched by its `Host` header to a domain config, which picks and groups the monitors; a `Host` with no config lists every active monitor. The page is rendered from memory: a request never queries the database (only `/healthz` pings it).
+
+**Components.**
+
+```
+  browser ──> TLS reverse proxy ──> kuma-sla (one Go binary, no state of its own)
+                                      |  every 60 s, read-only:
+                                      +--> kuma.db (Uptime Kuma's SQLite, mounted :ro)
+                                      |      monitor, stat_daily, heartbeat
+                                      +--> CONFIG_DIR/<hostname>.yaml (which monitors, texts)
+```
+
+**Where the data lives.**
+
+- Uptimes and monitor names: in Uptime Kuma's database, which kuma-sla only reads (`mode=ro` and `query_only`, and the container mounts the data dir read-only). Its own copy is in memory, rebuilt every 60 s.
+- What each hostname shows: the YAML files in `CONFIG_DIR`, re-read every 60 s.
+- Nothing else: no database, no cookies, no logs of visitors. The PT/EN choice is kept in the browser's `localStorage`.
+
 ## Requirements
 
 - **Uptime Kuma 2.x** with a **SQLite** database (the `stat_daily` table must exist).
 - Read access to the `kuma.db` file (run this next to Kuma, or mount the volume read-only).
-- **Docker** to run the published image — or Go 1.24+ to build from source.
+- **Docker** to run the published image — or Go 1.27+ to build from source.
 
 ## Quick start (Docker)
 
