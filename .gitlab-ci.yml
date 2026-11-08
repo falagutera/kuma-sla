@@ -8,6 +8,15 @@ include:
     ref: main
 stages: [security, test, build]
 
+# go.mod needs Go 1.27 and the template's images pin GOTOOLCHAIN=local on an older Go:
+# run govulncheck on 1.27 and let gosec fetch the toolchain go.mod asks for.
+sec:govulncheck:
+  image: golang:1.27-alpine
+
+sec:gosec:
+  variables:
+    GOTOOLCHAIN: auto
+
 test:
   stage: test
   image: golang:1.27-alpine
