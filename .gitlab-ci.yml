@@ -1,4 +1,4 @@
-# Shared security stage (gitleaks, govulncheck, trivy gate; the rest advisory), then vet, gofmt,
+# Shared security stage (betterleaks, govulncheck, trivy gate; the rest advisory), then vet, gofmt,
 # go test (no services: the SLA test builds its own SQLite file) and govulncheck.
 # On the default branch: the static linux/amd64 binary as a job artifact, and the image published to
 # registry.gutocarvalho.net/images/kuma-sla with tags X.Y.Z-BUILD (immutable, pin this one), X.Y.Z and latest.
