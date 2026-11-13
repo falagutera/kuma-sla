@@ -13,6 +13,21 @@ It reads Uptime Kuma's database **read-only** (never writes), computes uptime ov
 Which monitors show up on which hostname is driven by a **YAML file per domain**, so
 one instance can serve any number of status domains.
 
+## Contents
+
+- [Screenshot](#screenshot)
+- [Why](#why)
+- [How it works](#how-it-works)
+- [Testing and security](#testing-and-security)
+- [Architecture](#architecture)
+- [Requirements](#requirements)
+- [Quick start (Docker)](#quick-start-docker)
+- [Install (Docker, recommended)](#install-docker-recommended)
+- [Versions](#versions)
+- [Contributing](#contributing)
+- [Roadmap](#roadmap)
+- [License](#license)
+
 ## Screenshot
 
 [![kuma-sla rendering a public status page](docs/screenshot.png)](https://sla.bolha.io)
