@@ -13,6 +13,13 @@ It reads Uptime Kuma's database **read-only** (never writes), computes uptime ov
 Which monitors show up on which hostname is driven by a **YAML file per domain**, so
 one instance can serve any number of status domains.
 
+## Screenshot
+
+[![kuma-sla rendering a public status page](docs/screenshot.png)](https://sla.bolha.io)
+
+*A live instance at [sla.bolha.io](https://sla.bolha.io): public community services grouped
+by kind, per-window SLA, light/dark and PT/EN.*
+
 ## Why
 
 Uptime Kuma is great, but its status page doesn't give a compact, per-service SLA
